@@ -1,7 +1,8 @@
 {
   "name": "Azure AI Tasks",
   "content_in_root": false,
-  "filename": "azure_ai_tasks",
-  "country": [],
+  "zip_release": true,
+  "filename": "azure_ai_tasks.zip",
+  "hide_default_branch": false,
   "homeassistant": "2024.1.0"
 }
