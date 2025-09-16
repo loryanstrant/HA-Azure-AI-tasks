@@ -186,6 +186,7 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
     async def _async_generate_image(
         self,
         task: ai_task.GenImageTask,
+        chat_log: conversation.ChatLog,
     ) -> ai_task.GenImageTaskResult:
         """Handle an image generation task."""
         session = async_get_clientsession(self._hass)
