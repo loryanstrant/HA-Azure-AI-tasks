@@ -5,7 +5,10 @@ A Home Assistant custom integration that facilitates AI tasks using Azure AI ser
 ## Features
 
 - Easy configuration through Home Assistant UI
-- Secure API key management
+- Secure API key management  
+- **User-selectable AI models for chat responses** (GPT-3.5, GPT-4, GPT-4o, etc.)
+- **Image generation support** with DALL-E 2 and DALL-E 3
+- **Reconfiguration support** - change models without re-entering credentials
 - Compatible with Azure OpenAI and other Azure AI services
 - HACS ready for easy installation
 
@@ -29,14 +32,25 @@ A Home Assistant custom integration that facilitates AI tasks using Azure AI ser
 1. Go to Settings → Devices & Services → Add Integration
 2. Search for "Azure AI Tasks"
 3. Enter your Azure AI endpoint URL and API key
-4. Give your integration a name
-5. Click Submit
+4. **Select your preferred chat model** (gpt-35-turbo, gpt-4, gpt-4o, etc.)
+5. **Select your preferred image generation model** (dall-e-2, dall-e-3)
+6. Give your integration a name
+7. Click Submit
+
+### Reconfiguration
+
+To change AI models without re-entering credentials:
+1. Go to your Azure AI Tasks integration
+2. Click "Configure" 
+3. Select different models as needed
+4. Save changes
 
 ## Usage
 
 Once configured, the integration provides an AI Task entity that can be used in automations and scripts to process AI tasks using your Azure AI service.
 
-Example service call:
+### Chat/Text Generation
+Example service call for generating text responses:
 ```yaml
 service: ai_task.process
 target:
@@ -44,6 +58,33 @@ target:
 data:
   task: "Summarize the weather forecast for today"
 ```
+
+### Image Generation  
+Example service call for generating images:
+```yaml
+service: ai_task.process
+target:
+  entity_id: ai_task.azure_ai_tasks
+data:
+  task_type: "generate_image"
+  prompt: "A beautiful sunset over mountains"
+  size: "1024x1024"
+```
+
+### Available Models
+
+**Chat Models:**
+- gpt-35-turbo (default)
+- gpt-35-turbo-16k
+- gpt-4
+- gpt-4-32k  
+- gpt-4-turbo
+- gpt-4o
+- gpt-4o-mini
+
+**Image Models:**
+- dall-e-2
+- dall-e-3 (default)
 
 ## Requirements
 
