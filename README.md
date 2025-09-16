@@ -8,6 +8,7 @@ A Home Assistant custom integration that facilitates AI tasks using Azure AI ser
 - Secure API key management  
 - **User-selectable AI models for chat responses** (GPT-3.5, GPT-4, GPT-4o, etc.)
 - **Image generation support** with DALL-E 2 and DALL-E 3
+- **Image and video analysis with attachment support** - analyze camera streams and uploaded images
 - **Reconfiguration support** - change models without re-entering credentials
 - Compatible with Azure OpenAI and other Azure AI services
 - HACS ready for easy installation
@@ -69,6 +70,39 @@ data:
   task_type: "generate_image"
   prompt: "A beautiful sunset over mountains"
   size: "1024x1024"
+```
+
+### Image/Video Analysis with Attachments
+Example service calls for analyzing images or camera streams:
+
+**Analyze Camera Stream:**
+```yaml
+action: ai_task.generate_data
+data:
+  task_name: camera analysis
+  instructions: What's going on in this picture?
+  entity_id: ai_task.azure_ai_tasks
+  attachments:
+    media_content_id: media-source://camera/camera.front_door_fluent
+    media_content_type: application/vnd.apple.mpegurl
+    metadata:
+      title: Front door camera
+      media_class: video
+```
+
+**Analyze Uploaded Image:**
+```yaml
+action: ai_task.generate_data
+data:
+  task_name: image analysis
+  instructions: Describe what you see in this image
+  entity_id: ai_task.azure_ai_tasks
+  attachments:
+    media_content_id: media-source://media_source/local/my_image.jpeg
+    media_content_type: image/jpeg
+    metadata:
+      title: My uploaded image
+      media_class: image
 ```
 
 ### Available Models
