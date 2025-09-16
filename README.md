@@ -40,15 +40,48 @@ A Home Assistant custom integration that facilitates AI tasks using Azure AI ser
 
 ### Reconfiguration
 
-To change AI models without re-entering credentials:
+To change AI models or image generation settings without re-entering credentials:
 1. Go to your Azure AI Tasks integration
 2. Click "Configure" 
 3. Select different models as needed
-4. Save changes
+4. **Configure default image size** (256x256, 512x512, 1024x1024, 1792x1024)
+5. **Configure default image quality** (standard, hd)
+6. Save changes
 
 ## Usage
 
 Once configured, the integration provides an AI Task entity that can be used in automations and scripts to process AI tasks using your Azure AI service.
+
+### Important: Image Size Parameter
+
+**Note:** The `size` parameter is not supported directly in the service call data due to Home Assistant AI task framework limitations. Instead, the integration provides two ways to control image size and quality:
+
+1. **Configure defaults** in the integration options (recommended)
+2. **Specify in prompts** using keywords like "512x512" or "HD"
+
+**❌ This will not work:**
+```yaml
+service: ai_task.generate_image
+data:
+  entity_id: ai_task.azure_ai_tasks
+  instructions: "A duck on a submarine"
+  size: "1024x1024"  # ← This parameter is not supported
+```
+
+**✅ These approaches work:**
+```yaml
+# Method 1: Use configured defaults
+service: ai_task.generate_image
+data:
+  entity_id: ai_task.azure_ai_tasks
+  instructions: "A duck on a submarine"
+
+# Method 2: Specify size in prompt
+service: ai_task.generate_image
+data:
+  entity_id: ai_task.azure_ai_tasks
+  instructions: "A 1024x1024 HD image of a duck on a submarine"
+```
 
 ### Chat/Text Generation
 Example service call for generating text responses:
@@ -63,14 +96,32 @@ data:
 ### Image Generation  
 Example service call for generating images:
 ```yaml
-service: ai_task.process
+service: ai_task.generate_image
 target:
   entity_id: ai_task.azure_ai_tasks
 data:
-  task_type: "generate_image"
-  prompt: "A beautiful sunset over mountains"
-  size: "1024x1024"
+  instructions: "A beautiful sunset over mountains"
 ```
+
+The integration will use your configured default image size and quality. You can also specify size and quality in the prompt:
+
+```yaml
+service: ai_task.generate_image
+target:
+  entity_id: ai_task.azure_ai_tasks
+data:
+  instructions: "A beautiful 512x512 HD sunset over mountains"
+```
+
+**Supported size keywords in prompts:**
+- `256x256` or `256` → 256x256 pixels
+- `512x512` or `512` → 512x512 pixels  
+- `1024x1024` or `1024` → 1024x1024 pixels
+- `1792x1024` or `1792` → 1792x1024 pixels (DALL-E 3 only)
+
+**Supported quality keywords in prompts:**
+- `HD`, `high quality`, `high-quality` → HD quality
+- `standard quality`, `standard` → Standard quality
 
 ### Image/Video Analysis with Attachments
 Example service calls for analyzing images or camera streams:
