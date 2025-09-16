@@ -55,6 +55,9 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
         ai_task.AITaskEntityFeature.GENERATE_DATA |
         ai_task.AITaskEntityFeature.GENERATE_IMAGE
     )
+    
+    # Indicate that this entity supports attachments
+    _attr_supports_attachments = True
 
     def __init__(
         self,
@@ -99,13 +102,25 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
     @property
     def supported_features(self) -> int:
         """Return the supported features of the entity."""
-        return (
+        features = (
             ai_task.AITaskEntityFeature.GENERATE_DATA |
             ai_task.AITaskEntityFeature.GENERATE_IMAGE
         )
+        # Try to add attachment support if the feature exists
+        try:
+            features |= ai_task.AITaskEntityFeature.SUPPORT_ATTACHMENTS
+        except AttributeError:
+            # Feature doesn't exist, that's okay
+            pass
+        return features
 
     def supports_attachments(self) -> bool:
         """Return whether the entity supports attachments."""
+        return True
+
+    @property 
+    def supports_media_attachments(self) -> bool:
+        """Return whether the entity supports media attachments."""
         return True
 
     async def _async_options_updated(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -224,8 +239,17 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
         for content in chat_log.content:
             if isinstance(content, conversation.UserContent):
                 user_message = content.content
-            # Check for media/image attachments in chat log
+            # Check for different types of content that might contain attachments
             elif hasattr(content, 'media_content_id'):
+                attachments.append(content)
+            elif hasattr(content, 'attachments'):
+                # Some content types might have an attachments attribute
+                if isinstance(content.attachments, list):
+                    attachments.extend(content.attachments)
+                else:
+                    attachments.append(content.attachments)
+            # Check for media content type
+            elif hasattr(content, 'content_type') and content.content_type.startswith('image/'):
                 attachments.append(content)
         
         # Also check if the task itself has attachments
@@ -238,6 +262,8 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
         
         if not user_message:
             raise HomeAssistantError("No task instructions found in chat log")
+        
+        _LOGGER.debug("Processing task with %d attachments", len(attachments))
         
         # Check if we have attachments to process
         has_attachments = len(attachments) > 0
