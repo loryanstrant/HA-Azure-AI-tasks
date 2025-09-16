@@ -392,32 +392,38 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
         if not user_message:
             raise HomeAssistantError("No prompt found in chat log")
         
+        # Extract size from the prompt if specified
+        size = "1024x1024"  # Default size
+        quality = "standard"  # Default quality
+        
+        # Check for size hints in the prompt
+        user_message_lower = user_message.lower()
+        if "256x256" in user_message_lower or "256" in user_message_lower:
+            size = "256x256"
+        elif "512x512" in user_message_lower or "512" in user_message_lower:
+            size = "512x512"
+        elif "1792x1024" in user_message_lower or "1792" in user_message_lower:
+            size = "1792x1024" if self.image_model == "dall-e-3" else "1024x1024"
+        elif "1024x1024" in user_message_lower:
+            size = "1024x1024"
+        
+        # Check for quality hints in the prompt
+        if "hd" in user_message_lower or "high quality" in user_message_lower or "high-quality" in user_message_lower:
+            quality = "hd"
+        
         # Prepare the image generation payload
         payload = {
             "prompt": user_message,
-            "size": "1024x1024",  # Default size, could be made configurable
+            "size": size,
             "n": 1,
-            "quality": "standard"
+            "quality": quality
         }
         
-        # Add size and quality parameters based on the model
+        # Add additional parameters based on the model
         if self.image_model == "dall-e-3":
             payload.update({
-                "quality": "hd" if task.size and ("hd" in task.size.lower() or "high" in task.size.lower()) else "standard",
                 "style": "natural"  # Could be "vivid" or "natural"
             })
-        
-        # Handle size parameter if provided
-        if task.size:
-            if any(size in task.size.lower() for size in ["256", "512", "1024", "1792"]):
-                if "256" in task.size:
-                    payload["size"] = "256x256"
-                elif "512" in task.size:
-                    payload["size"] = "512x512"
-                elif "1792" in task.size:
-                    payload["size"] = "1792x1024" if self.image_model == "dall-e-3" else "1024x1024"
-                else:
-                    payload["size"] = "1024x1024"
         
         try:
             async with session.post(
