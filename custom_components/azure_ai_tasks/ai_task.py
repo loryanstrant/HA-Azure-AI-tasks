@@ -196,9 +196,20 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
             "Authorization": f"Bearer {self._api_key}"
         }
         
+        # Extract the prompt from the chat log
+        # Get the user's message content from the chat log
+        user_message = None
+        for content in chat_log.content:
+            if isinstance(content, conversation.UserContent):
+                user_message = content.content
+                break
+        
+        if not user_message:
+            raise HomeAssistantError("No prompt found in chat log")
+        
         # Prepare the image generation payload
         payload = {
-            "prompt": task.prompt,
+            "prompt": user_message,
             "size": "1024x1024",  # Default size, could be made configurable
             "n": 1,
             "quality": "standard"
