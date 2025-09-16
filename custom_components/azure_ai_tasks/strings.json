@@ -24,10 +24,12 @@
     "step": {
       "init": {
         "title": "Azure AI Tasks Options",
-        "description": "Configure your preferred AI models",
+        "description": "Configure your preferred AI models and image generation settings",
         "data": {
           "chat_model": "Chat Model",
-          "image_model": "Image Generation Model"
+          "image_model": "Image Generation Model",
+          "image_size": "Default Image Size",
+          "image_quality": "Default Image Quality"
         }
       }
     }
