@@ -462,8 +462,7 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
                             image_data = await img_response.read()
                             
                             return ai_task.GenImageTaskResult(
-                                image_data=image_data,
-                                image_format="png"
+                                image_data=image_data
                             )
                         else:
                             raise HomeAssistantError(f"Failed to download generated image: {img_response.status}")
