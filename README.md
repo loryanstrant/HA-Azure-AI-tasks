@@ -120,15 +120,6 @@ data:
 
 ### Available Models
 
-**Chat Models:**
-- gpt-35-turbo (default)
-- gpt-35-turbo-16k
-- gpt-4
-- gpt-4-32k  
-- gpt-4-turbo
-- gpt-4o
-- gpt-4o-mini
-
 You can enter any model name that your Azure AI deployment supports.
 
 ## Requirements
