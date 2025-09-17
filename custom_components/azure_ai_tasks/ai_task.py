@@ -72,9 +72,6 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
         self._hass = hass
         self._config_entry = config_entry
         self._attr_unique_id = f"azure_ai_tasks_{name.lower().replace(' ', '_')}"
-        
-        # Listen for options updates
-        self._config_entry.add_update_listener(self._async_options_updated)
 
     @property
     def name(self) -> str:
@@ -108,11 +105,6 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
         """Return whether the entity supports media attachments."""
         return True
 
-    async def _async_options_updated(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
-        """Handle options update."""
-        # This will trigger a reload of the entity with new options
-        await self.async_update_ha_state()
-
     async def _process_attachment(self, attachment, session) -> str | None:
         """Process an attachment and return base64 encoded image data."""
         try:
@@ -127,8 +119,10 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
                 if media_id.startswith('media-source://camera/'):
                     return await self._process_camera_attachment(media_id, session)
                 
-                # Handle uploaded images
-                elif media_id.startswith('media-source://media_source/'):
+                # Handle uploaded images and local media files
+                elif (media_id.startswith('media-source://media_source/') or 
+                      media_id.startswith('/media/local/') or
+                      'local/' in media_id):
                     return await self._process_media_source_attachment(media_id, session)
                 
                 # Handle direct image URLs or other formats
@@ -180,11 +174,58 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
                             return base64.b64encode(image_data).decode('utf-8')
                         else:
                             _LOGGER.error("Failed to fetch media from resolved URL: %s", response.status)
+                else:
+                    _LOGGER.error("Failed to resolve media source %s: No URL returned", media_id)
             except Exception as err:
                 _LOGGER.error("Failed to resolve media source %s: %s", media_id, err)
+                
+                # Try to handle local media files directly if media source resolution fails
+                if 'local/' in media_id:
+                    return await self._process_local_media_file(media_id, session)
                         
         except Exception as err:
             _LOGGER.error("Error processing media source attachment: %s", err)
+            
+        return None
+
+    async def _process_local_media_file(self, media_id: str, session) -> str | None:
+        """Process local media file directly."""
+        try:
+            import os
+            from pathlib import Path
+            
+            # Extract the local file path from media_id
+            # Format: media-source://media_source/local/filename.jpg
+            if 'media-source://media_source/local/' in media_id:
+                filename = media_id.split('media-source://media_source/local/')[-1]
+            elif '/media/local/' in media_id:
+                filename = media_id.split('/media/local/')[-1]
+            else:
+                _LOGGER.error("Unable to extract filename from media_id: %s", media_id)
+                return None
+            
+            # Construct the full path to the media file
+            # Home Assistant typically stores local media in /media
+            media_path = Path(self._hass.config.path("www", "media", filename))
+            
+            # Also try the standard /media path
+            if not media_path.exists():
+                media_path = Path("/media") / filename
+                
+            # Also try /config/www/media (common HA setup)
+            if not media_path.exists():
+                media_path = Path(self._hass.config.path("www")) / filename
+                
+            if media_path.exists() and media_path.is_file():
+                _LOGGER.debug("Reading local media file: %s", media_path)
+                with open(media_path, 'rb') as f:
+                    image_data = f.read()
+                    return base64.b64encode(image_data).decode('utf-8')
+            else:
+                _LOGGER.error("Local media file not found: %s", media_path)
+                
+        except Exception as err:
+            _LOGGER.error("Error processing local media file: %s", err)
             
         return None
 

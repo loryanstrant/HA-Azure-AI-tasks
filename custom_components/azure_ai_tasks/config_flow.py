@@ -100,8 +100,9 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        # Get current values or defaults
-        current_chat_model = self.config_entry.data.get(CONF_CHAT_MODEL, DEFAULT_CHAT_MODEL)
+        # Get current values from options first, then data, then defaults
+        current_chat_model = (self.config_entry.options.get(CONF_CHAT_MODEL) or 
+                            self.config_entry.data.get(CONF_CHAT_MODEL, DEFAULT_CHAT_MODEL))
 
         options_schema = vol.Schema(
             {
