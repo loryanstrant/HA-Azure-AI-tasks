@@ -1,6 +1,13 @@
 # Azure AI Tasks - Home Assistant Integration
 
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
+[![GitHub release](https://img.shields.io/github/release/loryanstrant/HA-Azure-AI-Tasks.svg)](https://github.com/loryanstrant/HA-Azure-AI-Tasks/releases/)
+
 A Home Assistant custom integration that facilitates AI tasks using Azure AI services.
+
+<p align="center"><img width="256" height="256" alt="icon" src="https://github.com/user-attachments/assets/934b88ed-f038-474f-9211-4417717e5e84" /><p>
+
+
 
 ## Features
 
@@ -10,6 +17,7 @@ A Home Assistant custom integration that facilitates AI tasks using Azure AI ser
 - **Image generation support** with DALL-E 2 and DALL-E 3
 - **Image and video analysis with attachment support** - analyze camera streams and uploaded images
 - **Reconfiguration support** - change models without re-entering credentials
+- **Multiple entry support** - use different API endpoints and keys for different purposes
 - Compatible with Azure OpenAI and other Azure AI services
 - HACS ready for easy installation
 
@@ -17,10 +25,21 @@ A Home Assistant custom integration that facilitates AI tasks using Azure AI ser
 
 ### Via HACS (Recommended)
 
-1. Add this repository to HACS as a custom repository
-2. Install "Azure AI Tasks" from HACS
-3. Restart Home Assistant
-4. Add the integration through the UI (Settings → Devices & Services → Add Integration)
+1. Open HACS in your Home Assistant instance
+2. Go to "Integrations"
+3. Click the three dots menu and select "Custom repositories"
+4. Add `https://github.com/loryanstrant/HA-Azure-AI-Tasks` as repository
+5. Set category to "Integration"
+6. Click "Add"
+7. Find "Azure AI Tasks" in the integration list and install it
+8. Restart Home Assistant
+9. Go to Configuration > Integrations
+10. Click "+ Add Integration" and search for "Azure AI Tasks"
+11. Press Submit to complete the installation.
+
+Or replace steps 1-6 with this:
+
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=loryanstrant&repository=HA-Azure-AI-Tasks&category=integration)
 
 ### Manual Installation
 
@@ -38,6 +57,10 @@ A Home Assistant custom integration that facilitates AI tasks using Azure AI ser
 6. Give your integration a name
 7. Click Submit
 
+<img width="380" height="604" alt="image" src="https://github.com/user-attachments/assets/81185909-4b34-4570-a864-f7edead5da4a" />
+
+
+
 ### Reconfiguration
 
 To change AI models or image generation settings without re-entering credentials:
@@ -52,36 +75,7 @@ To change AI models or image generation settings without re-entering credentials
 
 Once configured, the integration provides an AI Task entity that can be used in automations and scripts to process AI tasks using your Azure AI service.
 
-### Important: Image Size Parameter
 
-**Note:** The `size` parameter is not supported directly in the service call data due to Home Assistant AI task framework limitations. Instead, the integration provides two ways to control image size and quality:
-
-1. **Configure defaults** in the integration options (recommended)
-2. **Specify in prompts** using keywords like "512x512" or "HD"
-
-**❌ This will not work:**
-```yaml
-service: ai_task.generate_image
-data:
-  entity_id: ai_task.azure_ai_tasks
-  instructions: "A duck on a submarine"
-  size: "1024x1024"  # ← This parameter is not supported
-```
-
-**✅ These approaches work:**
-```yaml
-# Method 1: Use configured defaults
-service: ai_task.generate_image
-data:
-  entity_id: ai_task.azure_ai_tasks
-  instructions: "A duck on a submarine"
-
-# Method 2: Specify size in prompt
-service: ai_task.generate_image
-data:
-  entity_id: ai_task.azure_ai_tasks
-  instructions: "A 1024x1024 HD image of a duck on a submarine"
-```
 
 ### Chat/Text Generation
 Example service call for generating text responses:
@@ -93,35 +87,7 @@ data:
   task: "Summarize the weather forecast for today"
 ```
 
-### Image Generation  
-Example service call for generating images:
-```yaml
-service: ai_task.generate_image
-target:
-  entity_id: ai_task.azure_ai_tasks
-data:
-  instructions: "A beautiful sunset over mountains"
-```
 
-The integration will use your configured default image size and quality. You can also specify size and quality in the prompt:
-
-```yaml
-service: ai_task.generate_image
-target:
-  entity_id: ai_task.azure_ai_tasks
-data:
-  instructions: "A beautiful 512x512 HD sunset over mountains"
-```
-
-**Supported size keywords in prompts:**
-- `256x256` or `256` → 256x256 pixels
-- `512x512` or `512` → 512x512 pixels  
-- `1024x1024` or `1024` → 1024x1024 pixels
-- `1792x1024` or `1792` → 1792x1024 pixels (DALL-E 3 only)
-
-**Supported quality keywords in prompts:**
-- `HD`, `high quality`, `high-quality` → HD quality
-- `standard quality`, `standard` → Standard quality
 
 ### Image/Video Analysis with Attachments
 Example service calls for analyzing images or camera streams:
@@ -156,6 +122,13 @@ data:
       media_class: image
 ```
 
+### Image Generation  
+
+**NOTE:** While the integration does support image generation, the current version of Home Assistant (2025.9.x) doesn't seem to have the functionality properly implemented. While an action exists, it doesn't have inputs for the necessary parameters required to generate an image (such as size & quality). I tried to make these work with custom YAML and putting them within the instructions but it didn't work.
+For now, I've left the functionality in there but have removed the instructions from the documentation.
+When it works, I'll bring it back!
+
+
 ### Available Models
 
 **Chat Models:**
@@ -177,6 +150,18 @@ data:
 - Azure AI service with API access
 - Valid Azure AI endpoint and API key
 
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Development Approach
+<img width="256" height="256" alt="Vibe Coding with GitHub Copilot 256x256" src="https://github.com/user-attachments/assets/bb41d075-6b3e-4f2b-a88e-94b2022b5d4f" />
+
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
 ## Support
 
-For issues and feature requests, please visit the [GitHub repository](https://github.com/loryanstrant/ha-azure-ai-task).
+If you encounter any issues, please report them on the [GitHub Issues page](https://github.com/loryanstrant/HA-CustomComponentMonitor/issues).
