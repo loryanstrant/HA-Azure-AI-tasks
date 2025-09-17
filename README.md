@@ -50,12 +50,15 @@ Or replace steps 1-6 with this:
 
 1. Go to Settings → Devices & Services → Add Integration
 2. Search for "Azure AI Tasks"
-3. Enter your Azure AI endpoint URL and API key
-4. **Enter your preferred chat model** (gpt-35-turbo, gpt-4, gpt-4o, etc.)
-5. Give your integration a name
-6. Click Submit
+3. Enter your Azure AI endpoint URL (make sure you use the Azure OpenAI URL - i.e. https://USE-YOUR-RESOURCE-URL.openai.azure.com)
+4. Enter your API key
+5. **Enter your preferred chat model** (gpt-35-turbo, gpt-4, gpt-4o, etc.)
+6. Give your integration a name
+7. Click Submit
 
-<img width="377" height="479" alt="image" src="https://github.com/user-attachments/assets/db283176-b329-4d41-a1f9-4bf181e9f056" />
+<img width="383" height="478" alt="image" src="https://github.com/user-attachments/assets/8932c51a-8fcb-42bc-9e22-ead143c610d7" />
+
+
 
 
 
