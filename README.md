@@ -55,7 +55,8 @@ Or replace steps 1-6 with this:
 5. Give your integration a name
 6. Click Submit
 
-<img width="380" height="604" alt="image" src="https://github.com/user-attachments/assets/81185909-4b34-4570-a864-f7edead5da4a" />
+<img width="377" height="479" alt="image" src="https://github.com/user-attachments/assets/db283176-b329-4d41-a1f9-4bf181e9f056" />
+
 
 
 
@@ -82,6 +83,7 @@ target:
 data:
   task: "Summarize the weather forecast for today"
 ```
+![HA Azure AI Task example](https://github.com/user-attachments/assets/592ec039-20ea-436f-a6f0-caf88bef9b56)
 
 
 
