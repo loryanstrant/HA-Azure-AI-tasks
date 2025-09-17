@@ -68,6 +68,10 @@ To change AI models without re-entering credentials:
 3. Enter a different model as needed
 4. Save changes
 
+<img width="1072" height="700" alt="image" src="https://github.com/user-attachments/assets/598b8c28-7663-4507-be63-22413cac4b9d" />
+
+
+
 ## Usage
 
 Once configured, the integration provides an AI Task entity that can be used in automations and scripts to process AI tasks using your Azure AI service.
@@ -104,6 +108,9 @@ data:
       title: Front door camera
       media_class: video
 ```
+<img width="1390" height="1247" alt="image" src="https://github.com/user-attachments/assets/c475523b-37af-4e76-9336-bc148c5a1a5d" />
+<br><br>
+
 
 **Analyze Uploaded Image:**
 ```yaml
@@ -119,6 +126,9 @@ data:
       title: My uploaded image
       media_class: image
 ```
+<img width="1372" height="1222" alt="image" src="https://github.com/user-attachments/assets/28e81122-463d-4d37-8df9-1a7c0d902f86" />
+
+
 
 ### Available Models
 
