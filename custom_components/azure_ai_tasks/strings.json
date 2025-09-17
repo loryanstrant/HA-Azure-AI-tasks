@@ -3,13 +3,12 @@
     "step": {
       "user": {
         "title": "Set up Azure AI Tasks",
-        "description": "Enter your Azure AI endpoint, API key, and select your preferred models",
+        "description": "Enter your Azure AI endpoint, API key, and chat model",
         "data": {
           "name": "Name",
           "endpoint": "Azure AI Endpoint URL",
           "api_key": "API Key",
-          "chat_model": "Chat Model",
-          "image_model": "Image Generation Model"
+          "chat_model": "Chat Model"
         }
       }
     },
@@ -24,12 +23,9 @@
     "step": {
       "init": {
         "title": "Azure AI Tasks Options",
-        "description": "Configure your preferred AI models and image generation settings",
+        "description": "Configure your preferred chat model",
         "data": {
-          "chat_model": "Chat Model",
-          "image_model": "Image Generation Model",
-          "image_size": "Default Image Size",
-          "image_quality": "Default Image Quality"
+          "chat_model": "Chat Model"
         }
       }
     }

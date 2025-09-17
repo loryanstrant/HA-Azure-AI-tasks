@@ -16,7 +16,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util.json import json_loads
 
-from .const import CONF_API_KEY, CONF_ENDPOINT, CONF_CHAT_MODEL, CONF_IMAGE_MODEL, CONF_IMAGE_SIZE, CONF_IMAGE_QUALITY, DOMAIN, DEFAULT_IMAGE_SIZE, DEFAULT_IMAGE_QUALITY
+from .const import CONF_API_KEY, CONF_ENDPOINT, CONF_CHAT_MODEL, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,11 +29,9 @@ async def async_setup_entry(
     """Set up Azure AI Task entities from a config entry."""
     config = hass.data[DOMAIN][config_entry.entry_id]
     
-    # Get models from options if available, otherwise use config data or defaults
+    # Get chat model from options if available, otherwise use config data or defaults
     chat_model = (config_entry.options.get(CONF_CHAT_MODEL) or 
                  config.get(CONF_CHAT_MODEL, "gpt-35-turbo"))
-    image_model = (config_entry.options.get(CONF_IMAGE_MODEL) or 
-                  config.get(CONF_IMAGE_MODEL, "dall-e-3"))
     
     async_add_entities([
         AzureAITaskEntity(
@@ -41,7 +39,6 @@ async def async_setup_entry(
             config[CONF_ENDPOINT],
             config[CONF_API_KEY],
             chat_model,
-            image_model,
             hass,
             config_entry
         )
@@ -52,8 +49,7 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
     """Azure AI Task entity."""
 
     _attr_supported_features = (
-        ai_task.AITaskEntityFeature.GENERATE_DATA |
-        ai_task.AITaskEntityFeature.GENERATE_IMAGE
+        ai_task.AITaskEntityFeature.GENERATE_DATA
     )
     
     # Indicate that this entity supports attachments
@@ -65,7 +61,6 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
         endpoint: str,
         api_key: str,
         chat_model: str,
-        image_model: str,
         hass: HomeAssistant,
         config_entry: ConfigEntry,
     ) -> None:
@@ -74,7 +69,6 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
         self._endpoint = endpoint.rstrip("/")
         self._api_key = api_key
         self._chat_model = chat_model
-        self._image_model = image_model
         self._hass = hass
         self._config_entry = config_entry
         self._attr_unique_id = f"azure_ai_tasks_{name.lower().replace(' ', '_')}"
@@ -94,30 +88,9 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
                 self._config_entry.data.get(CONF_CHAT_MODEL, self._chat_model))
 
     @property
-    def image_model(self) -> str:
-        """Return the current image model."""
-        return (self._config_entry.options.get(CONF_IMAGE_MODEL) or 
-                self._config_entry.data.get(CONF_IMAGE_MODEL, self._image_model))
-
-    @property
-    def image_size(self) -> str:
-        """Return the current default image size."""
-        return (self._config_entry.options.get(CONF_IMAGE_SIZE) or 
-                self._config_entry.data.get(CONF_IMAGE_SIZE, DEFAULT_IMAGE_SIZE))
-
-    @property
-    def image_quality(self) -> str:
-        """Return the current default image quality."""
-        return (self._config_entry.options.get(CONF_IMAGE_QUALITY) or 
-                self._config_entry.data.get(CONF_IMAGE_QUALITY, DEFAULT_IMAGE_QUALITY))
-
-    @property
     def supported_features(self) -> int:
         """Return the supported features of the entity."""
-        features = (
-            ai_task.AITaskEntityFeature.GENERATE_DATA |
-            ai_task.AITaskEntityFeature.GENERATE_IMAGE
-        )
+        features = ai_task.AITaskEntityFeature.GENERATE_DATA
         # Try to add attachment support if the feature exists
         try:
             features |= ai_task.AITaskEntityFeature.SUPPORT_ATTACHMENTS
@@ -379,98 +352,3 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
         except aiohttp.ClientError as err:
             _LOGGER.error("Error communicating with Azure AI: %s", err)
             raise HomeAssistantError(f"Error communicating with Azure AI: {err}") from err
-
-    async def _async_generate_image(
-        self,
-        task: ai_task.GenImageTask,
-        chat_log: conversation.ChatLog,
-    ) -> ai_task.GenImageTaskResult:
-        """Handle an image generation task."""
-        session = async_get_clientsession(self._hass)
-        
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self._api_key}"
-        }
-        
-        # Extract the prompt from the chat log
-        # Get the user's message content from the chat log
-        user_message = None
-        for content in chat_log.content:
-            if isinstance(content, conversation.UserContent):
-                user_message = content.content
-                break
-        
-        if not user_message:
-            raise HomeAssistantError("No prompt found in chat log")
-        
-        # Extract size from the prompt if specified, otherwise use configured default
-        size = self.image_size  # Use configured default
-        quality = self.image_quality  # Use configured default
-        
-        # Check for size hints in the prompt (this overrides the default)
-        user_message_lower = user_message.lower()
-        if "256x256" in user_message_lower or " 256 " in user_message_lower:
-            size = "256x256"
-        elif "512x512" in user_message_lower or " 512 " in user_message_lower:
-            size = "512x512"
-        elif "1792x1024" in user_message_lower or " 1792 " in user_message_lower:
-            size = "1792x1024" if self.image_model == "dall-e-3" else "1024x1024"
-        elif "1024x1024" in user_message_lower or " 1024 " in user_message_lower:
-            size = "1024x1024"
-        
-        # Check for quality hints in the prompt (this overrides the default)
-        if "hd" in user_message_lower or "high quality" in user_message_lower or "high-quality" in user_message_lower:
-            quality = "hd"
-        elif "standard quality" in user_message_lower or "standard" in user_message_lower:
-            quality = "standard"
-        
-        # Prepare the image generation payload
-        payload = {
-            "prompt": user_message,
-            "size": size,
-            "n": 1,
-            "quality": quality
-        }
-        
-        # Add additional parameters based on the model
-        if self.image_model == "dall-e-3":
-            payload.update({
-                "style": "natural"  # Could be "vivid" or "natural"
-            })
-        
-        try:
-            async with session.post(
-                f"{self._endpoint}/openai/deployments/{self.image_model}/images/generations",
-                headers=headers,
-                json=payload,
-                params={"api-version": "2024-02-15-preview"}
-            ) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    _LOGGER.error("Azure AI Image API error: %s", error_text)
-                    raise HomeAssistantError(f"Azure AI Image API error: {response.status}")
-                
-                result = await response.json()
-                
-                if "data" in result and len(result["data"]) > 0:
-                    image_url = result["data"][0]["url"]
-                    
-                    # Download the image
-                    async with session.get(image_url) as img_response:
-                        if img_response.status == 200:
-                            image_data = await img_response.read()
-                            
-                            return ai_task.GenImageTaskResult(
-                                image_data=image_data,
-                                image_format="png"
-                            )
-                        else:
-                            raise HomeAssistantError(f"Failed to download generated image: {img_response.status}")
-                else:
-                    _LOGGER.error("Unexpected response format from Azure AI Image API: %s", result)
-                    raise HomeAssistantError("Unexpected response format from Azure AI Image API")
-                    
-        except aiohttp.ClientError as err:
-            _LOGGER.error("Error communicating with Azure AI Image API: %s", err)
-            raise HomeAssistantError(f"Error communicating with Azure AI Image API: {err}") from err

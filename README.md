@@ -13,8 +13,7 @@ A Home Assistant custom integration that facilitates AI tasks using Azure AI ser
 
 - Easy configuration through Home Assistant UI
 - Secure API key management  
-- **User-selectable AI models for chat responses** (GPT-3.5, GPT-4, GPT-4o, etc.)
-- **Image generation support** with DALL-E 2 and DALL-E 3
+- **User-configurable AI models for chat responses** (GPT-3.5, GPT-4, GPT-4o, etc.) - type in any model name
 - **Image and video analysis with attachment support** - analyze camera streams and uploaded images
 - **Reconfiguration support** - change models without re-entering credentials
 - **Multiple entry support** - use different API endpoints and keys for different purposes
@@ -52,10 +51,9 @@ Or replace steps 1-6 with this:
 1. Go to Settings → Devices & Services → Add Integration
 2. Search for "Azure AI Tasks"
 3. Enter your Azure AI endpoint URL and API key
-4. **Select your preferred chat model** (gpt-35-turbo, gpt-4, gpt-4o, etc.)
-5. **Select your preferred image generation model** (dall-e-2, dall-e-3)
-6. Give your integration a name
-7. Click Submit
+4. **Enter your preferred chat model** (gpt-35-turbo, gpt-4, gpt-4o, etc.)
+5. Give your integration a name
+6. Click Submit
 
 <img width="380" height="604" alt="image" src="https://github.com/user-attachments/assets/81185909-4b34-4570-a864-f7edead5da4a" />
 
@@ -63,13 +61,11 @@ Or replace steps 1-6 with this:
 
 ### Reconfiguration
 
-To change AI models or image generation settings without re-entering credentials:
+To change AI models without re-entering credentials:
 1. Go to your Azure AI Tasks integration
 2. Click "Configure" 
-3. Select different models as needed
-4. **Configure default image size** (256x256, 512x512, 1024x1024, 1792x1024)
-5. **Configure default image quality** (standard, hd)
-6. Save changes
+3. Enter a different model as needed
+4. Save changes
 
 ## Usage
 
@@ -122,27 +118,9 @@ data:
       media_class: image
 ```
 
-### Image Generation  
-
-**NOTE:** While the integration does support image generation, the current version of Home Assistant (2025.9.x) doesn't seem to have the functionality properly implemented. While an action exists, it doesn't have inputs for the necessary parameters required to generate an image (such as size & quality). I tried to make these work with custom YAML and putting them within the instructions but it didn't work.
-For now, I've left the functionality in there but have removed the instructions from the documentation.
-When it works, I'll bring it back!
-
-
 ### Available Models
 
-**Chat Models:**
-- gpt-35-turbo (default)
-- gpt-35-turbo-16k
-- gpt-4
-- gpt-4-32k  
-- gpt-4-turbo
-- gpt-4o
-- gpt-4o-mini
-
-**Image Models:**
-- dall-e-2
-- dall-e-3 (default)
+You can enter any model name that your Azure AI deployment supports.
 
 ## Requirements
 

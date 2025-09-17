@@ -17,18 +17,8 @@ from .const import (
     CONF_API_KEY, 
     CONF_ENDPOINT, 
     CONF_CHAT_MODEL,
-    CONF_IMAGE_MODEL,
-    CONF_IMAGE_SIZE,
-    CONF_IMAGE_QUALITY,
     DEFAULT_NAME, 
     DEFAULT_CHAT_MODEL,
-    DEFAULT_IMAGE_MODEL,
-    DEFAULT_IMAGE_SIZE,
-    DEFAULT_IMAGE_QUALITY,
-    CHAT_MODELS,
-    IMAGE_MODELS,
-    IMAGE_SIZES,
-    IMAGE_QUALITIES,
     DOMAIN
 )
 
@@ -39,8 +29,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Required(CONF_NAME, default=DEFAULT_NAME): str,
         vol.Required(CONF_ENDPOINT): str,
         vol.Required(CONF_API_KEY): str,
-        vol.Required(CONF_CHAT_MODEL, default=DEFAULT_CHAT_MODEL): vol.In(CHAT_MODELS),
-        vol.Required(CONF_IMAGE_MODEL, default=DEFAULT_IMAGE_MODEL): vol.In(IMAGE_MODELS),
+        vol.Required(CONF_CHAT_MODEL, default=DEFAULT_CHAT_MODEL): str,
     }
 )
 
@@ -113,16 +102,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
         # Get current values or defaults
         current_chat_model = self.config_entry.data.get(CONF_CHAT_MODEL, DEFAULT_CHAT_MODEL)
-        current_image_model = self.config_entry.data.get(CONF_IMAGE_MODEL, DEFAULT_IMAGE_MODEL)
-        current_image_size = self.config_entry.data.get(CONF_IMAGE_SIZE, DEFAULT_IMAGE_SIZE)
-        current_image_quality = self.config_entry.data.get(CONF_IMAGE_QUALITY, DEFAULT_IMAGE_QUALITY)
 
         options_schema = vol.Schema(
             {
-                vol.Required(CONF_CHAT_MODEL, default=current_chat_model): vol.In(CHAT_MODELS),
-                vol.Required(CONF_IMAGE_MODEL, default=current_image_model): vol.In(IMAGE_MODELS),
-                vol.Required(CONF_IMAGE_SIZE, default=current_image_size): vol.In(IMAGE_SIZES),
-                vol.Required(CONF_IMAGE_QUALITY, default=current_image_quality): vol.In(IMAGE_QUALITIES),
+                vol.Required(CONF_CHAT_MODEL, default=current_chat_model): str,
             }
         )
 
