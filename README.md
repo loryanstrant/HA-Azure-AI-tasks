@@ -157,4 +157,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Support
 
-If you encounter any issues, please report them on the [GitHub Issues page](https://github.com/loryanstrant/HA-CustomComponentMonitor/issues).
+If you encounter any issues, please report them on the [GitHub Issues page](https://github.com/loryanstrant/HA-Azure-AI-tasks/issues).
