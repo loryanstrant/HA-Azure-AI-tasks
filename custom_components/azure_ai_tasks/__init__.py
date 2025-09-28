@@ -4,14 +4,39 @@ from __future__ import annotations
 import logging
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
+from homeassistant.const import Platform, __version__ as ha_version
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import DOMAIN
 
 PLATFORMS: list[Platform] = [Platform.AI_TASK]
 
 _LOGGER = logging.getLogger(__name__)
+
+# Minimum Home Assistant version required
+MIN_HA_VERSION = "2025.10.0"
+
+
+def _check_ha_version() -> None:
+    """Check if Home Assistant version meets minimum requirements."""
+    from packaging import version
+    
+    try:
+        current_version = version.parse(ha_version.split(".dev")[0])  # Remove .dev suffix if present
+        min_version = version.parse(MIN_HA_VERSION)
+        
+        if current_version < min_version:
+            raise ConfigEntryNotReady(
+                f"Home Assistant {MIN_HA_VERSION} or newer is required. "
+                f"Current version: {ha_version}"
+            )
+    except Exception as err:
+        _LOGGER.warning(
+            "Unable to verify Home Assistant version compatibility: %s. "
+            "Integration may not work correctly if running on older versions.",
+            err
+        )
 
 
 async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
@@ -52,6 +77,9 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Azure AI Tasks from a config entry."""
+    # Check Home Assistant version compatibility
+    _check_ha_version()
+    
     # Set up the integration
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = entry.data
