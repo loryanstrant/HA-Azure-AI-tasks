@@ -14,7 +14,9 @@ A Home Assistant custom integration that facilitates AI tasks using Azure AI ser
 - Easy configuration through Home Assistant UI
 - Secure API key management  
 - **User-configurable AI models for chat responses** (GPT-3.5, GPT-4, GPT-4o, etc.) - type in any model name
+- **🎨 Image generation with DALL-E support** - generate images from text prompts using DALL-E 2/3
 - **Image and video analysis with attachment support** - analyze camera streams and uploaded images
+- **Flexible entity configuration** - create chat-only, image-only, or combined entities
 - **Reconfiguration support** - change models without re-entering credentials
 - **Multiple entry support** - use different API endpoints and keys for different purposes
 - Compatible with Azure OpenAI and other Azure AI services
@@ -52,9 +54,10 @@ Or replace steps 1-6 with this:
 2. Search for "Azure AI Tasks"
 3. Enter your Azure AI endpoint URL (make sure you use the Azure OpenAI URL - i.e. https://USE-YOUR-RESOURCE-URL.openai.azure.com)
 4. Enter your API key
-5. **Enter your preferred chat model** (gpt-35-turbo, gpt-4, gpt-4o, etc.)
-6. Give your integration a name
-7. Click Submit
+5. **Enter your preferred chat model** (gpt-35-turbo, gpt-4, gpt-4o, etc.) - leave empty for image-only entities
+6. **Enter your preferred image model** (dall-e-2, dall-e-3, etc.) - leave empty for chat-only entities  
+7. Give your integration a name
+8. Click Submit
 
 <img width="383" height="478" alt="image" src="https://github.com/user-attachments/assets/8932c51a-8fcb-42bc-9e22-ead143c610d7" />
 
@@ -68,8 +71,13 @@ Or replace steps 1-6 with this:
 To change AI models without re-entering credentials:
 1. Go to your Azure AI Tasks integration
 2. Click "Configure" 
-3. Enter a different model as needed
+3. Enter different chat/image models as needed (use placeholder text `[None - leave empty to disable chat]` or `[None - leave empty to disable images]` to clear fields)
 4. Save changes
+
+**Note**: You can create specialized entities by leaving one model type empty:
+- **Chat-only entities**: Configure chat model, leave image model empty
+- **Image-only entities**: Configure image model, leave chat model empty  
+- **Combined entities**: Configure both models
 
 <img width="1072" height="700" alt="image" src="https://github.com/user-attachments/assets/598b8c28-7663-4507-be63-22413cac4b9d" />
 
@@ -91,6 +99,34 @@ data:
   task: "Summarize the weather forecast for today"
 ```
 ![HA Azure AI Task example](https://github.com/user-attachments/assets/592ec039-20ea-436f-a6f0-caf88bef9b56)
+
+### 🎨 Image Generation
+Example service calls for generating images with DALL-E:
+
+**Basic Image Generation:**
+```yaml
+action: ai_image.generate_image
+data:
+  prompt: "A futuristic smart home with holographic displays and AI assistants"
+  entity_id: ai_image.azure_ai_tasks_dall_e_3
+```
+
+**Advanced Image Generation with Parameters:**
+```yaml
+action: ai_image.generate_image
+data:
+  prompt: "A cozy living room during sunset with warm lighting"
+  entity_id: ai_image.azure_ai_tasks_dall_e_3
+  size: "1024x1024"
+  quality: "hd"
+  style: "vivid"
+```
+
+**Supported DALL-E Parameters:**
+- **size**: Image dimensions (DALL-E 2: 256x256, 512x512, 1024x1024; DALL-E 3: 1024x1024, 1024x1792, 1792x1024)
+- **quality**: Image quality for DALL-E 3 (standard, hd)  
+- **style**: Image style for DALL-E 3 (natural, vivid)
+- **n**: Number of images to generate (1-10 for DALL-E 2, 1 for DALL-E 3)
 
 
 
@@ -135,11 +171,16 @@ data:
 
 ### Available Models
 
-You can enter any model name that your Azure AI deployment supports.
+**Chat Models**: You can enter any chat model name that your Azure AI deployment supports:
+- gpt-35-turbo, gpt-4, gpt-4o, gpt-4-turbo, etc.
+
+**Image Models**: Supported image generation models:
+- **dall-e-2**: Classic DALL-E model with multiple size options
+- **dall-e-3**: Latest DALL-E model with enhanced quality and style controls
 
 ## Requirements
 
-- Home Assistant 2024.1 or later
+- **Home Assistant 2025.10.0 or later** (required for AI Task and AI Image services)
 - Azure AI service with API access
 - Valid Azure AI endpoint and API key
 
