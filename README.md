@@ -110,6 +110,9 @@ data:
   prompt: "A futuristic smart home with holographic displays and AI assistants"
   entity_id: ai_image.azure_ai_tasks_dall_e_3
 ```
+<img width="1413" height="1164" alt="image" src="https://github.com/user-attachments/assets/b1d7c898-bb54-4398-838f-838f4a5e26fa" />
+<img width="1360" height="1246" alt="Generated AI image of a futuristic smart home with holographic displays and AI assistants" src="https://github.com/user-attachments/assets/f748fffd-a379-4745-845f-1fecdff31e44" />
+
 
 **Advanced Image Generation with Parameters:**
 ```yaml
