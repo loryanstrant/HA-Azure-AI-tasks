@@ -114,7 +114,6 @@ data:
 <img width="1360" height="1246" alt="Generated AI image of a futuristic smart home with holographic displays and AI assistants" src="https://github.com/user-attachments/assets/f748fffd-a379-4745-845f-1fecdff31e44" />
 
 
-
 **Advanced Image Generation with Parameters:**
 ```yaml
 action: ai_image.generate_image
