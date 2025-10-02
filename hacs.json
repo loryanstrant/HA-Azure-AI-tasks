@@ -4,5 +4,5 @@
   "zip_release": true,
   "filename": "azure_ai_tasks.zip",
   "hide_default_branch": false,
-  "homeassistant": "2024.1.0"
+  "homeassistant": "2025.10.0"
 }
