@@ -60,7 +60,6 @@ async def async_setup_entry(
         )
     ])
 
-
 class AzureAITaskEntity(ai_task.AITaskEntity):
     """Azure AI Task entity."""
 
