@@ -5,6 +5,9 @@ import base64
 import logging
 from json import JSONDecodeError
 
+import re
+import io
+
 import aiohttp
 
 from homeassistant.components import ai_task, conversation
@@ -89,20 +92,29 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
         if self._image_model:
             features |= ai_task.AITaskEntityFeature.GENERATE_IMAGE
             
-        # Try to add attachment support if the feature exists and we have a chat model
+        # Add attachment support if the feature exists and we have a chat or vision-capable image model
+        supports_attachments = False
         if self._chat_model:
+            supports_attachments = True
+        # Add support for image models that accept attachments (vision models)
+        if self._image_model and self._image_model.lower() in ["gpt-image-1", "flux.1-kontext-pro", "gpt-4v", "gpt-4o"]:
+            supports_attachments = True
+        if supports_attachments:
             try:
                 features |= ai_task.AITaskEntityFeature.SUPPORT_ATTACHMENTS
             except AttributeError:
-                # Feature doesn't exist, that's okay
                 pass
                 
         self._attr_supported_features = features
     
     @property
     def supports_attachments(self) -> bool:
-        """Return whether the entity supports attachments."""
-        return bool(self._chat_model)
+        """Return whether the entity supports attachments (chat or vision image models)."""
+        if self.chat_model:
+            return True
+        if self.image_model and self.image_model.lower() in ["gpt-image-1", "flux.1-kontext-pro", "gpt-4v", "gpt-4o"]:
+            return True
+        return False
 
     @property
     def name(self) -> str:
@@ -127,20 +139,19 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
     def supported_features(self) -> int:
         """Return the supported features of the entity."""
         features = 0
-        
+        vision_models = ["gpt-image-1", "flux.1-kontext-pro", "gpt-4v", "gpt-4o"]
         # Add data generation if chat model is configured
         if self.chat_model:
             features |= ai_task.AITaskEntityFeature.GENERATE_DATA
-            # Try to add attachment support if available
+        # Add image generation if image model is configured
+        if self.image_model:
+            features |= ai_task.AITaskEntityFeature.GENERATE_IMAGE
+        # Add attachment support if chat model or vision image model is present
+        if self.chat_model or (self.image_model and self.image_model.lower() in vision_models):
             try:
                 features |= ai_task.AITaskEntityFeature.SUPPORT_ATTACHMENTS
             except AttributeError:
                 pass
-                
-        # Add image generation if image model is configured
-        if self.image_model:
-            features |= ai_task.AITaskEntityFeature.GENERATE_IMAGE
-            
         return features
 
     @property
@@ -156,33 +167,100 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
     async def _process_attachment(self, attachment, session) -> str | None:
         """Process an attachment and return base64 encoded image data."""
         try:
+            _LOGGER.debug("_process_attachment: attachment=%r, type=%r, dir=%r", attachment, type(attachment), dir(attachment))
             # Handle different media content types
             if hasattr(attachment, 'media_content_id'):
                 media_id = attachment.media_content_id
                 media_type = getattr(attachment, 'media_content_type', '')
-                
-                _LOGGER.debug("Processing attachment: %s (type: %s)", media_id, media_type)
-                
+                _LOGGER.debug("Processing attachment: media_id=%s, media_type=%s", media_id, media_type)
                 # Handle camera streams
                 if media_id.startswith('media-source://camera/'):
                     return await self._process_camera_attachment(media_id, session)
-                
-                # Handle uploaded images and local media files
-                elif (media_id.startswith('media-source://media_source/') or 
-                      media_id.startswith('/media/local/') or
-                      'local/' in media_id):
+                # Handle uploaded images and local media files, including media-source://image/
+                elif (
+                    media_id.startswith('media-source://media_source/') or
+                    media_id.startswith('/media/local/') or
+                    'local/' in media_id or
+                    media_id.startswith('media-source://image/')
+                ):
+                    # For media-source://image/, prefer reading from path if available
+                    if hasattr(attachment, 'path'):
+                        _LOGGER.debug("media-source://image/ detected, using path attribute: %r", getattr(attachment, 'path', None))
+                        from pathlib import Path
+                        file_path = Path(attachment.path)
+                        _LOGGER.debug("Attachment has .path attribute: %r (type: %r)", file_path, type(file_path))
+                        _LOGGER.debug("Checking file existence: %r, is_file: %r", file_path.exists(), file_path.is_file())
+                        try:
+                            import os
+                            if not file_path.exists():
+                                _LOGGER.error("Attachment path does not exist: %r", file_path)
+                                return None
+                            if not file_path.is_file():
+                                _LOGGER.error("Attachment path is not a file: %r", file_path)
+                                return None
+                            if not os.access(file_path, os.R_OK):
+                                _LOGGER.error("Attachment path is not readable (permission denied): %r", file_path)
+                                return None
+                            _LOGGER.debug("Opening file for reading: %r", file_path)
+                            import aiofiles
+                            async with aiofiles.open(file_path, 'rb') as f:
+                                image_data = await f.read()
+                            _LOGGER.debug("Read %d bytes from file %r", len(image_data), file_path)
+                            return base64.b64encode(image_data).decode('utf-8')
+                        except Exception as err:
+                            import traceback
+                            _LOGGER.error("Exception reading attachment path: %s\nTraceback: %s (attachment=%r)", err, traceback.format_exc(), attachment)
+                    # fallback to media source handler
                     return await self._process_media_source_attachment(media_id, session)
-                
                 # Handle direct image URLs or other formats
                 elif media_type.startswith('image/'):
                     return await self._process_image_attachment(media_id, session)
-                
                 else:
-                    _LOGGER.warning("Unsupported media type: %s", media_type)
-                    
+                    _LOGGER.warning("Unsupported media type: %s (media_id=%s)", media_type, media_id)
+            # Try to handle generic file-like or data/content/path attributes (for generate_data and fallback)
+            elif hasattr(attachment, 'file'):
+                _LOGGER.debug("Attachment has .file attribute, attempting to read and encode.")
+                file_obj = getattr(attachment, 'file')
+                file_obj.seek(0)
+                image_data = file_obj.read()
+                return base64.b64encode(image_data).decode('utf-8')
+            elif hasattr(attachment, 'data'):
+                _LOGGER.debug("Attachment has .data attribute, attempting to encode.")
+                image_data = getattr(attachment, 'data')
+                return base64.b64encode(image_data).decode('utf-8')
+            elif hasattr(attachment, 'content'):
+                _LOGGER.debug("Attachment has .content attribute, attempting to encode.")
+                image_data = getattr(attachment, 'content')
+                return base64.b64encode(image_data).decode('utf-8')
+            elif hasattr(attachment, 'path'):
+                from pathlib import Path
+                file_path = Path(attachment.path)
+                _LOGGER.debug("Attachment has .path attribute (fallback): %r (type: %r)", file_path, type(file_path))
+                _LOGGER.debug("Checking file existence: %r, is_file: %r", file_path.exists(), file_path.is_file())
+                try:
+                    import os
+                    if not file_path.exists():
+                        _LOGGER.error("Attachment path does not exist: %r", file_path)
+                        return None
+                    if not file_path.is_file():
+                        _LOGGER.error("Attachment path is not a file: %r", file_path)
+                        return None
+                    if not os.access(file_path, os.R_OK):
+                        _LOGGER.error("Attachment path is not readable (permission denied): %r", file_path)
+                        return None
+                    _LOGGER.debug("Opening file for reading: %r", file_path)
+                    import aiofiles
+                    async with aiofiles.open(file_path, 'rb') as f:
+                        image_data = await f.read()
+                    _LOGGER.debug("Read %d bytes from file %r", len(image_data), file_path)
+                    return base64.b64encode(image_data).decode('utf-8')
+                except Exception as err:
+                    import traceback
+                    _LOGGER.error("Exception reading attachment path (fallback): %s\nTraceback: %s (attachment=%r)", err, traceback.format_exc(), attachment)
+            else:
+                _LOGGER.warning("Attachment does not have media_content_id, file, data, content, or path: %r", attachment)
         except Exception as err:
-            _LOGGER.error("Error processing attachment: %s", err)
-            
+            _LOGGER.error("Error processing attachment: %s (attachment=%r)", err, attachment)
         return None
 
     async def _process_camera_attachment(self, media_id: str, session) -> str | None:
@@ -298,180 +376,376 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
         task: ai_task.GenImageTask,
         chat_log: conversation.ChatLog,
     ) -> ai_task.GenImageTaskResult:
-        """Handle a generate image task."""
-        # Check if image model is configured
+        """Handle a generate image task, including attachments for vision models."""
         if not self.image_model:
             raise HomeAssistantError("No image model configured for this entity")
-            
+
         session = async_get_clientsession(self._hass)
-        
+
+        # Extract the task instructions and attachments from the chat log and task
+        user_message = None
+        attachments = []
+        for content in chat_log.content:
+            if isinstance(content, conversation.UserContent):
+                user_message = content.content
+            elif hasattr(content, 'media_content_id'):
+                attachments.append(content)
+            elif hasattr(content, 'attachments'):
+                if isinstance(content.attachments, list):
+                    attachments.extend(content.attachments)
+                else:
+                    attachments.append(content.attachments)
+            elif hasattr(content, 'content_type') and content.content_type.startswith('image/'):
+                attachments.append(content)
+        if hasattr(task, 'attachments') and task.attachments:
+            if isinstance(task.attachments, list):
+                attachments.extend(task.attachments)
+            else:
+                attachments.append(task.attachments)
+
+        if not user_message:
+            raise HomeAssistantError("No task instructions found in chat log")
+
+        image_model = self.image_model
+        vision_models = ["gpt-image-1", "flux.1-kontext-pro", "gpt-4v", "gpt-4o"]
+
+        # Distinguish between image creation and image edit for FLUX.1-Kontext-pro
+        if image_model.lower() == "flux.1-kontext-pro":
+            if attachments:
+                # Image edit: use /images/edits endpoint, JSON payload, image as base64 string
+                image_data_b64 = await self._process_attachment(attachments[0], session)
+                if not image_data_b64:
+                    _LOGGER.error("Failed to process image attachment for editing. Attachments: %r", attachments)
+                    raise HomeAssistantError("Failed to process image attachment for editing.")
+
+                url = f"{self._endpoint}/openai/deployments/{image_model}/images/edits"
+                api_version = "2025-04-01-preview"
+                headers = {
+                    "Content-Type": "application/json",
+                    "api-key": self._api_key
+                }
+                payload = {
+                    "model": image_model,
+                    "prompt": user_message,
+                    "image": image_data_b64,
+                    "response_format": "b64_json",
+                    "size": "1024x1024"
+                }
+                try:
+                    async with session.post(
+                        url,
+                        headers=headers,
+                        json=payload,
+                        params={"api-version": api_version}
+                    ) as response:
+                        if response.status != 200:
+                            error_text = await response.text()
+                            _LOGGER.error("Azure AI image edit error: %s (status=%s)", error_text, response.status)
+                            try:
+                                result = await response.json()
+                                _LOGGER.error("Azure AI image edit error full response: %r", result)
+                            except Exception:
+                                pass
+                            if "contentFilter" in error_text:
+                                raise HomeAssistantError("Image edit blocked by content filter")
+                            elif response.status == 401:
+                                raise HomeAssistantError("Authentication failed - check your API key")
+                            elif response.status == 404:
+                                raise HomeAssistantError(f"Model '{image_model}' not found - check your deployment name")
+                            else:
+                                raise HomeAssistantError(f"Azure AI image edit error: {response.status}")
+                        result = await response.json()
+                        if "data" in result and len(result["data"]) > 0:
+                            image_item = result["data"][0]
+                            if "b64_json" in image_item:
+                                image_data = base64.b64decode(image_item["b64_json"])
+                            elif "url" in image_item:
+                                async with session.get(image_item["url"]) as img_response:
+                                    if img_response.status == 200:
+                                        image_data = await img_response.read()
+                                    else:
+                                        raise HomeAssistantError(f"Failed to download image: {img_response.status}")
+                            else:
+                                raise HomeAssistantError("No image data found in response")
+                            revised_prompt = user_message
+                            width = 1024
+                            height = 1024
+                            mime_type = "image/png"
+                            chat_log.async_add_assistant_content_without_tools(
+                                conversation.AssistantContent(
+                                    agent_id=self.entity_id,
+                                    content=f"Edited image: {revised_prompt}",
+                                )
+                            )
+                            return ai_task.GenImageTaskResult(
+                                image_data=image_data,
+                                conversation_id=chat_log.conversation_id,
+                                mime_type=mime_type,
+                                width=width,
+                                height=height,
+                                model=image_model,
+                                revised_prompt=revised_prompt,
+                            )
+                        elif "error" in result:
+                            error = result["error"]
+                            error_code = error.get("code", "unknown")
+                            error_message = error.get("message", "Unknown error")
+                            if error_code == "contentFilter":
+                                raise HomeAssistantError(f"Content filter: {error_message}")
+                            else:
+                                raise HomeAssistantError(f"API error [{error_code}]: {error_message}")
+                        else:
+                            _LOGGER.error("Unexpected response format from Azure AI: %s", result)
+                            raise HomeAssistantError("Unexpected response format from Azure AI")
+                except aiohttp.ClientError as err:
+                    _LOGGER.error("Error communicating with Azure AI: %s", err)
+                    raise HomeAssistantError(f"Error communicating with Azure AI: {err}") from err
+            else:
+                # Image creation: use /images/generations and JSON
+                headers = {
+                    "Content-Type": "application/json",
+                    "api-key": self._api_key
+                }
+                payload = {
+                    "prompt": user_message,
+                    "model": image_model,
+                    "n": 1,
+                    "size": "1024x1024",
+                    "response_format": "b64_json"
+                }
+                url = f"{self._endpoint}/openai/deployments/{image_model}/images/generations"
+                api_version = "2025-04-01-preview"
+                try:
+                    async with session.post(
+                        url,
+                        headers=headers,
+                        json=payload,
+                        params={"api-version": api_version}
+                    ) as response:
+                        if response.status != 200:
+                            error_text = await response.text()
+                            _LOGGER.error("Azure AI image generation error: %s (status=%s)", error_text, response.status)
+                            try:
+                                result = await response.json()
+                                _LOGGER.error("Azure AI image generation error full response: %r", result)
+                            except Exception:
+                                pass
+                            if "contentFilter" in error_text:
+                                raise HomeAssistantError("Image generation blocked by content filter")
+                            elif response.status == 401:
+                                raise HomeAssistantError("Authentication failed - check your API key")
+                            elif response.status == 404:
+                                raise HomeAssistantError(f"Model '{image_model}' not found - check your deployment name")
+                            else:
+                                raise HomeAssistantError(f"Azure AI image generation error: {response.status}")
+                        result = await response.json()
+                        if "data" in result and len(result["data"]) > 0:
+                            image_item = result["data"][0]
+                            if "b64_json" in image_item:
+                                image_data = base64.b64decode(image_item["b64_json"])
+                            elif "url" in image_item:
+                                async with session.get(image_item["url"]) as img_response:
+                                    if img_response.status == 200:
+                                        image_data = await img_response.read()
+                                    else:
+                                        raise HomeAssistantError(f"Failed to download image: {img_response.status}")
+                            else:
+                                raise HomeAssistantError("No image data found in response")
+                            revised_prompt = user_message
+                            width = 1024
+                            height = 1024
+                            mime_type = "image/png"
+                            chat_log.async_add_assistant_content_without_tools(
+                                conversation.AssistantContent(
+                                    agent_id=self.entity_id,
+                                    content=f"Generated image: {revised_prompt}",
+                                )
+                            )
+                            return ai_task.GenImageTaskResult(
+                                image_data=image_data,
+                                conversation_id=chat_log.conversation_id,
+                                mime_type=mime_type,
+                                width=width,
+                                height=height,
+                                model=image_model,
+                                revised_prompt=revised_prompt,
+                            )
+                        elif "error" in result:
+                            error = result["error"]
+                            error_code = error.get("code", "unknown")
+                            error_message = error.get("message", "Unknown error")
+                            if error_code == "contentFilter":
+                                raise HomeAssistantError(f"Content filter: {error_message}")
+                            else:
+                                raise HomeAssistantError(f"API error [{error_code}]: {error_message}")
+                        else:
+                            _LOGGER.error("Unexpected response format from Azure AI: %s", result)
+                            raise HomeAssistantError("Unexpected response format from Azure AI")
+                except aiohttp.ClientError as err:
+                    _LOGGER.error("Error communicating with Azure AI: %s", err)
+                    raise HomeAssistantError(f"Error communicating with Azure AI: {err}") from err
+                # End FLUX.1-Kontext-pro image creation
+            return  # Prevent further processing for FLUX.1-Kontext-pro
+
+        # ...existing code for other models...
         headers = {
             "Content-Type": "application/json",
             "api-key": self._api_key
         }
-        
-        # Extract the task instructions from the chat log
-        user_message = None
-        for content in chat_log.content:
-            if isinstance(content, conversation.UserContent):
-                user_message = content.content
-                break
-        
-        if not user_message:
-            raise HomeAssistantError("No task instructions found in chat log")
-        
-        # Get the image model to use
-        image_model = self.image_model
-        
-        # Build the payload for Azure OpenAI image generation API
-        payload = {
-            "prompt": user_message,
-            "model": image_model,
-            "n": 1,  # Generate one image
-        }
-        
-        # Configure parameters based on the specific model
-        if image_model == "gpt-image-1":
-            # GPT-image-1 specific parameters
-            payload.update({
-                "size": "1024x1024",  # Options: "1024x1024", "1024x1536", "1536x1024"
-                "quality": "high",  # Options: "low", "medium", "high"
-                "output_format": "png",  # Options: "png", "jpeg"
-                "output_compression": 100,  # 0-100, default 100
-                # Note: GPT-image-1 always returns base64, no response_format needed
-            })
+        if image_model.lower() in vision_models and attachments and image_model.lower() != "flux.1-kontext-pro":
+            message_content = [{"type": "text", "text": user_message}]
+            for attachment in attachments:
+                try:
+                    image_data = await self._process_attachment(attachment, session)
+                    if image_data:
+                        message_content.append({
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{image_data}"
+                            }
+                        })
+                except Exception as err:
+                    _LOGGER.warning("Failed to process attachment: %s", err)
+            payload = {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": message_content
+                    }
+                ],
+                "max_tokens": 1000,
+                "temperature": 0.7,
+                "model": image_model
+            }
+            url = f"{self._endpoint}/openai/deployments/{image_model}/chat/completions"
             api_version = "2025-04-01-preview"
-            
-        elif image_model == "dall-e-3":
-            # DALL-E 3 specific parameters  
-            payload.update({
-                "size": "1024x1024",  # Options: "1024x1024", "1792x1024", "1024x1792"
-                "quality": "standard",  # Options: "standard", "hd"
-                "style": "vivid",  # Options: "natural", "vivid" 
-                "response_format": "b64_json",  # Options: "url", "b64_json"
-            })
-            api_version = "2024-10-21"
-            
-        elif image_model == "dall-e-2":
-            # DALL-E 2 specific parameters
-            payload.update({
-                "size": "1024x1024",  # Options: "256x256", "512x512", "1024x1024"
-                "response_format": "b64_json",  # Options: "url", "b64_json"
-            })
-            api_version = "2024-10-21"
-            
         else:
-            # Default fallback
-            payload.update({
-                "size": "1024x1024",
-                "quality": "standard",
-            })
-            api_version = "2024-10-21"
-        
-        try:
-            # Make the API call to Azure OpenAI image generation endpoint
+            # Standard text-to-image
+            payload = {
+                "prompt": user_message,
+                "model": image_model,
+                "n": 1,
+            }
+            # Configure parameters based on the specific model
+            if image_model == "gpt-image-1":
+                payload.update({
+                    "size": "1024x1024",
+                    "quality": "high",
+                    "output_format": "png",
+                    "output_compression": 100,
+                })
+                api_version = "2025-04-01-preview"
+            elif image_model == "dall-e-3":
+                payload.update({
+                    "size": "1024x1024",
+                    "quality": "standard",
+                    "style": "vivid",
+                    "response_format": "b64_json",
+                })
+                api_version = "2024-10-21"
+            elif image_model == "dall-e-2":
+                payload.update({
+                    "size": "1024x1024",
+                    "response_format": "b64_json",
+                })
+                api_version = "2024-10-21"
+            else:
+                payload.update({
+                    "size": "1024x1024",
+                    "quality": "standard",
+                })
+                api_version = "2024-10-21"
             url = f"{self._endpoint}/openai/deployments/{image_model}/images/generations"
-            
-            async with session.post(
-                url,
-                headers=headers,
-                json=payload,
-                params={"api-version": api_version}
-            ) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    _LOGGER.error("Azure AI image generation error: %s", error_text)
-                    
-                    # Handle specific error cases
-                    if "contentFilter" in error_text:
-                        raise HomeAssistantError("Image generation blocked by content filter")
-                    elif response.status == 401:
-                        raise HomeAssistantError("Authentication failed - check your API key")
-                    elif response.status == 404:
-                        raise HomeAssistantError(f"Model '{image_model}' not found - check your deployment name")
-                    else:
-                        raise HomeAssistantError(f"Azure AI image generation error: {response.status}")
-                
-                result = await response.json()
-                
-                if "data" in result and len(result["data"]) > 0:
-                    image_item = result["data"][0]
-                    
-                    # Handle different response formats
-                    if "b64_json" in image_item:
-                        # Base64 encoded image (most common)
-                        import base64
-                        image_data = base64.b64decode(image_item["b64_json"])
-                        
-                    elif "url" in image_item:
-                        # URL to image - fetch it
-                        async with session.get(image_item["url"]) as img_response:
-                            if img_response.status == 200:
-                                image_data = await img_response.read()
-                            else:
-                                raise HomeAssistantError(f"Failed to download image: {img_response.status}")
-                    else:
-                        raise HomeAssistantError("No image data found in response")
-                    
-                    # Extract additional metadata
-                    revised_prompt = image_item.get("revised_prompt", user_message)
-                    
-                    # Parse size from payload
-                    width = 1024  # Default
-                    height = 1024  # Default
-                    if "size" in payload:
-                        try:
-                            size_parts = payload["size"].split("x")
-                            if len(size_parts) == 2:
-                                width = int(size_parts[0])
-                                height = int(size_parts[1])
-                        except (ValueError, IndexError):
-                            pass  # Use defaults
-                    
-                    # Determine MIME type from output format or default
-                    if image_model == "gpt-image-1":
-                        output_format = payload.get("output_format", "png")
-                        mime_type = f"image/{output_format}"
-                    else:
-                        # DALL-E models typically return PNG
+
+            try:
+                async with session.post(
+                    url,
+                    headers=headers,
+                    json=payload,
+                    params={"api-version": api_version}
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        _LOGGER.error("Azure AI image generation error: %s", error_text)
+                        if "contentFilter" in error_text:
+                            raise HomeAssistantError("Image generation blocked by content filter")
+                        elif response.status == 401:
+                            raise HomeAssistantError("Authentication failed - check your API key")
+                        elif response.status == 404:
+                            raise HomeAssistantError(f"Model '{image_model}' not found - check your deployment name")
+                        else:
+                            raise HomeAssistantError(f"Azure AI image generation error: {response.status}")
+                    result = await response.json()
+                    # Vision models return choices, standard image models return data
+                    if "choices" in result and len(result["choices"]) > 0:
+                        # Vision model response: extract image from content
+                        content = result["choices"][0]["message"]["content"]
+                        match = re.search(r'data:image/[^;]+;base64,([A-Za-z0-9+/=]+)', str(content))
+                        if match:
+                            image_data = base64.b64decode(match.group(1))
+                        else:
+                            raise HomeAssistantError("No image data found in vision model response")
+                        revised_prompt = user_message
+                        width = 1024
+                        height = 1024
                         mime_type = "image/png"
-                    
-                    # Add to chat log
-                    chat_log.async_add_assistant_content_without_tools(
-                        conversation.AssistantContent(
-                            agent_id=self.entity_id,
-                            content=f"Generated image: {revised_prompt}",
-                        )
-                    )
-                    
-                    return ai_task.GenImageTaskResult(
-                        image_data=image_data,
-                        conversation_id=chat_log.conversation_id,
-                        mime_type=mime_type,
-                        width=width,
-                        height=height,
-                        model=image_model,
-                        revised_prompt=revised_prompt,
-                    )
-                    
-                elif "error" in result:
-                    # Handle API errors
-                    error = result["error"]
-                    error_code = error.get("code", "unknown")
-                    error_message = error.get("message", "Unknown error")
-                    
-                    if error_code == "contentFilter":
-                        raise HomeAssistantError(f"Content filter: {error_message}")
+                    elif "data" in result and len(result["data"]) > 0:
+                        image_item = result["data"][0]
+                        if "b64_json" in image_item:
+                            image_data = base64.b64decode(image_item["b64_json"])
+                        elif "url" in image_item:
+                            async with session.get(image_item["url"]) as img_response:
+                                if img_response.status == 200:
+                                    image_data = await img_response.read()
+                                else:
+                                    raise HomeAssistantError(f"Failed to download image: {img_response.status}")
+                        else:
+                            raise HomeAssistantError("No image data found in response")
+                        revised_prompt = image_item.get("revised_prompt", user_message)
+                        width = 1024
+                        height = 1024
+                        if "size" in payload:
+                            try:
+                                size_parts = payload["size"].split("x")
+                                if len(size_parts) == 2:
+                                    width = int(size_parts[0])
+                                    height = int(size_parts[1])
+                            except (ValueError, IndexError):
+                                pass
+                        if image_model == "gpt-image-1":
+                            output_format = payload.get("output_format", "png")
+                            mime_type = f"image/{output_format}"
+                        else:
+                            mime_type = "image/png"
+                    elif "error" in result:
+                        error = result["error"]
+                        error_code = error.get("code", "unknown")
+                        error_message = error.get("message", "Unknown error")
+                        if error_code == "contentFilter":
+                            raise HomeAssistantError(f"Content filter: {error_message}")
+                        else:
+                            raise HomeAssistantError(f"API error [{error_code}]: {error_message}")
                     else:
-                        raise HomeAssistantError(f"API error [{error_code}]: {error_message}")
-                        
-                else:
-                    _LOGGER.error("Unexpected response format from Azure AI: %s", result)
-                    raise HomeAssistantError("Unexpected response format from Azure AI")
-                    
-        except aiohttp.ClientError as err:
-            _LOGGER.error("Error communicating with Azure AI: %s", err)
-            raise HomeAssistantError(f"Error communicating with Azure AI: {err}") from err
+                        _LOGGER.error("Unexpected response format from Azure AI: %s", result)
+                        raise HomeAssistantError("Unexpected response format from Azure AI")
+                chat_log.async_add_assistant_content_without_tools(
+                    conversation.AssistantContent(
+                        agent_id=self.entity_id,
+                        content=f"Generated image: {revised_prompt}",
+                    )
+                )
+                return ai_task.GenImageTaskResult(
+                    image_data=image_data,
+                    conversation_id=chat_log.conversation_id,
+                    mime_type=mime_type,
+                    width=width,
+                    height=height,
+                    model=image_model,
+                    revised_prompt=revised_prompt,
+                )
+            except aiohttp.ClientError as err:
+                _LOGGER.error("Error communicating with Azure AI: %s", err)
+                raise HomeAssistantError(f"Error communicating with Azure AI: {err}") from err
 
     async def _async_generate_data(
         self,
@@ -525,15 +799,18 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
         
         # Check if we have attachments to process
         has_attachments = len(attachments) > 0
-        
+        # For structured tasks, always instruct the model to return raw JSON (no markdown/code blocks)
+        if task.structure:
+            user_message = (
+                f"{user_message}\n\nRespond ONLY with valid JSON, no markdown, no code blocks, no explanation."
+            )
         if has_attachments:
-            # Use vision-capable model for image analysis
-            # Build message content with images for vision models
+            # Always use the configured chat model deployment for attachments (restore previous behavior)
+            model_to_use = self.chat_model
+            _LOGGER.info("Using configured chat model '%s' for attachment processing", model_to_use)
             message_content = [{"type": "text", "text": user_message}]
-            
             for attachment in attachments:
                 try:
-                    # Handle different types of media content
                     image_data = await self._process_attachment(attachment, session)
                     if image_data:
                         message_content.append({
@@ -544,8 +821,6 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
                         })
                 except Exception as err:
                     _LOGGER.warning("Failed to process attachment: %s", err)
-                    # Continue without this attachment
-            
             payload = {
                 "messages": [
                     {
@@ -557,7 +832,6 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
                 "temperature": 0.7
             }
         else:
-            # Standard text-only message
             payload = {
                 "messages": [
                     {
@@ -568,19 +842,9 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
                 "max_tokens": 1000,
                 "temperature": 0.7
             }
-        
-        try:
-            # Use vision-capable model when we have image attachments
             model_to_use = self.chat_model
-            if has_attachments:
-                # Use a vision-capable model if available
-                if self.chat_model.startswith('gpt-4'):
-                    model_to_use = self.chat_model  # GPT-4 models support vision
-                else:
-                    # Fallback to a vision-capable model
-                    model_to_use = "gpt-4o"  # Default vision-capable model
-                    _LOGGER.info("Switching to vision-capable model %s for attachment processing", model_to_use)
-            
+
+        try:
             async with session.post(
                 f"{self._endpoint}/openai/deployments/{model_to_use}/chat/completions",
                 headers=headers,
@@ -591,24 +855,24 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
                     error_text = await response.text()
                     _LOGGER.error("Azure AI API error: %s", error_text)
                     raise HomeAssistantError(f"Azure AI API error: {response.status}")
-                
                 result = await response.json()
-                
                 if "choices" in result and len(result["choices"]) > 0:
                     text = result["choices"][0]["message"]["content"].strip()
-                    
                     # If the task requires structured data, try to parse as JSON
                     if task.structure:
+                        import re
+                        cleaned = text.strip()
+                        cleaned = re.sub(r'^```(?:json)?\s*|\s*```$', '', cleaned, flags=re.MULTILINE)
+                        cleaned = cleaned.strip()
                         try:
-                            data = json_loads(text)
+                            data = json_loads(cleaned)
                         except JSONDecodeError as err:
                             _LOGGER.error(
                                 "Failed to parse JSON response: %s. Response: %s",
                                 err,
-                                text,
+                                cleaned,
                             )
                             raise HomeAssistantError("Error with Azure AI structured response") from err
-                        
                         return ai_task.GenDataTaskResult(
                             conversation_id=chat_log.conversation_id,
                             data=data,
@@ -621,7 +885,6 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
                 else:
                     _LOGGER.error("Unexpected response format from Azure AI: %s", result)
                     raise HomeAssistantError("Unexpected response format from Azure AI")
-                    
         except aiohttp.ClientError as err:
             _LOGGER.error("Error communicating with Azure AI: %s", err)
             raise HomeAssistantError(f"Error communicating with Azure AI: {err}") from err
