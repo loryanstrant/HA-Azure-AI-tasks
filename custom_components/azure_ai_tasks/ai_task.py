@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import os
 import re
@@ -787,11 +788,23 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
         
         _LOGGER.debug("Processing data generation task with %d attachments", len(attachments))
         
-        # For structured tasks, instruct the model to return raw JSON
+        # For structured tasks, instruct the model to return properly formatted JSON
         if task.structure:
-            user_message = (
-                f"{user_message}\n\nRespond ONLY with valid JSON, no markdown, no code blocks, no explanation."
-            )
+            try:
+                structure_instructions = self._build_structure_instructions(task.structure)
+                user_message = (
+                    f"{user_message}\n\n{structure_instructions}\n\n"
+                    "Respond ONLY with valid JSON matching the exact structure above. "
+                    "Do not include markdown, code blocks, or explanations."
+                )
+            except Exception as e:
+                _LOGGER.error("Failed to process structure: %s", e)
+                # Fallback to generic structured output instruction
+                user_message = (
+                    f"{user_message}\n\n"
+                    "Return your response as valid JSON with appropriate field names and values. "
+                    "Respond ONLY with valid JSON, no markdown, code blocks, or explanations."
+                )
         
         # Build the payload using the helper method
         payload = await self._build_chat_payload(user_message, attachments, session, self.chat_model)
@@ -833,6 +846,166 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
         except aiohttp.ClientError as err:
             _LOGGER.error("Error communicating with Azure AI: %s", err)
             raise HomeAssistantError(f"Error communicating with Azure AI: {err}") from err
+
+    def _build_structure_instructions(self, structure: Any) -> str:
+        """Build clear instructions for the AI model based on the structure schema."""
+        instructions = ["Return a JSON object with the following structure:"]
+        
+        try:
+            # Try to handle different types of structure objects
+            schema_dict = None
+            
+            # Handle voluptuous Schema objects
+            if hasattr(structure, 'schema') and isinstance(structure.schema, dict):
+                raw_schema = structure.schema
+                schema_dict = {}
+                
+                # Convert voluptuous keys to string field names
+                for key, value in raw_schema.items():
+                    try:
+                        # Extract field name from voluptuous key objects
+                        if hasattr(key, 'schema'):
+                            # This is likely a voluptuous key like Optional or Required
+                            field_name = str(key.schema)
+                        elif hasattr(key, 'key'):
+                            # Some voluptuous objects have a 'key' attribute
+                            field_name = str(key.key)
+                        else:
+                            # Fallback to string representation
+                            field_name = str(key)
+                        
+                        # Clean up the field name
+                        field_name = field_name.strip("'\"")
+                        schema_dict[field_name] = value
+                        
+                    except Exception as e:
+                        _LOGGER.warning("Error processing voluptuous key %s: %s", key, e)
+                        # Skip problematic keys
+                        continue
+            elif isinstance(structure, dict):
+                schema_dict = structure
+            else:
+                # Last resort: try to iterate and build dict
+                try:
+                    schema_dict = {}
+                    for key in structure:
+                        field_name = str(key)
+                        schema_dict[field_name] = getattr(structure, key, {})
+                except Exception:
+                    _LOGGER.warning("Unable to parse structure schema of type %s", type(structure))
+                    return "Return a JSON object with the requested data structure in a logical format."
+            
+            if not schema_dict:
+                return "Return a JSON object with the requested data structure in a logical format."
+            
+            # Build the JSON schema example
+            example_object = {}
+            field_descriptions = []
+            
+            for field_name, field_config in schema_dict.items():
+                try:
+                    # Handle different field config formats
+                    if isinstance(field_config, dict):
+                        # Extract field information
+                        description = field_config.get("description", "")
+                        is_required = field_config.get("required", False)
+                        selector = field_config.get("selector", {})
+                        
+                        # Determine the field type and example value
+                        field_type, example_value = self._get_field_type_and_example(selector, description)
+                        example_object[field_name] = example_value
+                        
+                        # Build field description
+                        requirement_text = "REQUIRED" if is_required else "optional"
+                        if description:
+                            field_descriptions.append(f"- {field_name} ({field_type}, {requirement_text}): {description}")
+                        else:
+                            field_descriptions.append(f"- {field_name} ({field_type}, {requirement_text})")
+                    else:
+                        # Handle simple field types, voluptuous validators, or other formats
+                        # Try to infer type from the field_config object
+                        field_type = "string"  # Default
+                        example_value = "example_value"
+                        
+                        # Check if it's a voluptuous validator that gives us type hints
+                        if hasattr(field_config, '__name__'):
+                            type_name = field_config.__name__.lower()
+                            if 'int' in type_name or 'number' in type_name:
+                                field_type = "number"
+                                example_value = 0
+                            elif 'bool' in type_name:
+                                field_type = "boolean" 
+                                example_value = True
+                            elif 'float' in type_name:
+                                field_type = "number"
+                                example_value = 0.0
+                        
+                        example_object[field_name] = example_value
+                        field_descriptions.append(f"- {field_name} ({field_type}, optional)")
+                        
+                except Exception as e:
+                    _LOGGER.warning("Error processing field %s: %s", field_name, e)
+                    # Fallback for problematic fields
+                    example_object[field_name] = "example_value"
+                    field_descriptions.append(f"- {field_name} (string, optional)")
+            
+            # Add the JSON schema example
+            if example_object:
+                instructions.append(f"\n{json.dumps(example_object, indent=2)}")
+            
+                # Add field descriptions
+                if field_descriptions:
+                    instructions.append("\nField descriptions:")
+                    instructions.extend(field_descriptions)
+                
+                # Add requirements note
+                required_fields = []
+                for name, config in schema_dict.items():
+                    if isinstance(config, dict) and config.get("required", False):
+                        required_fields.append(name)
+                
+                if required_fields:
+                    instructions.append(f"\nRequired fields: {', '.join(required_fields)}")
+            else:
+                instructions.append("\n{}")
+                instructions.append("\nPlease provide the data in a structured JSON format.")
+            
+            return "\n".join(instructions)
+            
+        except Exception as e:
+            _LOGGER.error("Error building structure instructions: %s", e)
+            return "Return a JSON object with the requested data structure in a logical format."
+    
+    def _get_field_type_and_example(self, selector: dict[str, Any], description: str) -> tuple[str, Any]:
+        """Determine field type and example value from selector config."""
+        if not selector:
+            # Default to string if no selector specified
+            return "string", "example_value"
+        
+        # Check selector type
+        for selector_type, config in selector.items():
+            if selector_type == "number":
+                min_val = config.get("min", 0) if isinstance(config, dict) else 0
+                max_val = config.get("max", 100) if isinstance(config, dict) else 100
+                return "number", min_val
+            elif selector_type == "boolean":
+                return "boolean", True
+            elif selector_type == "text":
+                return "string", "example text"
+            elif selector_type == "select":
+                options = config.get("options", []) if isinstance(config, dict) else []
+                if options:
+                    return "string", options[0] if isinstance(options[0], str) else str(options[0])
+                return "string", "option"
+            elif selector_type == "date":
+                return "string", "2025-01-01"
+            elif selector_type == "datetime":
+                return "string", "2025-01-01T12:00:00"
+            elif selector_type == "time":
+                return "string", "12:00:00"
+        
+        # Default fallback
+        return "string", "example_value"
 
     def _parse_structured_response(self, text: str) -> Any:
         """Parse structured JSON response from AI model."""
