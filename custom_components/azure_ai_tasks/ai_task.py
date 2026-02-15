@@ -60,7 +60,7 @@ def _uses_max_completion_tokens(model: str) -> bool:
         return False
     model_lower = model.lower()
     # GPT-5 models use max_completion_tokens
-    return model_lower.startswith("gpt-5") or model_lower.startswith("gpt5")
+    return model_lower.startswith("gpt-5")
 
 
 async def async_setup_entry(
