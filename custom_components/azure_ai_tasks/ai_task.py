@@ -50,6 +50,19 @@ MEDIA_SOURCE_IMAGE = "media-source://image/"
 MEDIA_LOCAL_PATH = "/media/local/"
 
 
+def _uses_max_completion_tokens(model: str) -> bool:
+    """Check if the model uses max_completion_tokens parameter instead of max_tokens.
+    
+    GPT-5 models (including gpt-5-mini) and newer models require max_completion_tokens.
+    Older models like GPT-4, GPT-3.5 use max_tokens.
+    """
+    if not model:
+        return False
+    model_lower = model.lower()
+    # GPT-5 models use max_completion_tokens
+    return model_lower.startswith("gpt-5") or model_lower.startswith("gpt5")
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
@@ -457,6 +470,9 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
         model: str
     ) -> dict[str, Any]:
         """Build chat completion payload with or without attachments."""
+        # Determine which token parameter to use based on the model
+        token_param = "max_completion_tokens" if _uses_max_completion_tokens(model) else "max_tokens"
+        
         if attachments:
             message_content: list[dict[str, Any]] = [{"type": "text", "text": user_message}]
             for attachment in attachments:
@@ -474,13 +490,13 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
             
             return {
                 "messages": [{"role": "user", "content": message_content}],
-                "max_tokens": MAX_TOKENS,
+                token_param: MAX_TOKENS,
                 "temperature": DEFAULT_TEMPERATURE
             }
         else:
             return {
                 "messages": [{"role": "user", "content": user_message}],
-                "max_tokens": MAX_TOKENS,
+                token_param: MAX_TOKENS,
                 "temperature": DEFAULT_TEMPERATURE
             }
 
@@ -644,10 +660,13 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
                     })
             except Exception as err:
                 _LOGGER.warning("Failed to process attachment: %s", err)
-                
+        
+        # Determine which token parameter to use based on the model
+        token_param = "max_completion_tokens" if _uses_max_completion_tokens(image_model) else "max_tokens"
+        
         payload = {
             "messages": [{"role": "user", "content": message_content}],
-            "max_tokens": MAX_TOKENS,
+            token_param: MAX_TOKENS,
             "temperature": DEFAULT_TEMPERATURE,
             "model": image_model
         }

@@ -19,7 +19,9 @@ CHAT_MODELS = [
     "gpt-4-32k", 
     "gpt-4-turbo",
     "gpt-4o",
-    "gpt-4o-mini"
+    "gpt-4o-mini",
+    "gpt-5",
+    "gpt-5-mini"
 ]
 
 # Available image generation models
