@@ -95,20 +95,32 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def _test_credentials(self, endpoint: str, api_key: str) -> bool:
-        """Test if we can authenticate with the host."""
+        """Test connectivity and authentication against the Azure OpenAI endpoint.
+
+        Azure OpenAI uses the 'api-key' header for API key authentication.
+        We probe the /openai/models endpoint which is available on all deployments
+        and returns 200 with a valid key or 401 with an invalid one.
+        """
         session = async_get_clientsession(self.hass)
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}"
+            "api-key": api_key,
         }
-        
-        # Basic connectivity test to the endpoint
-        async with session.get(endpoint, headers=headers) as response:
+
+        probe_url = endpoint.rstrip("/") + "/openai/models"
+        async with session.get(
+            probe_url,
+            headers=headers,
+            params={"api-version": "2024-10-21"},
+        ) as response:
             if response.status == 401:
                 raise Exception("Invalid API key")
-            elif response.status >= 400:
+            if response.status == 404:
+                # Endpoint exists but models path not found – still reachable
+                return True
+            if response.status >= 500:
                 raise Exception("Cannot connect to Azure AI endpoint")
-        
+
         return True
 
 

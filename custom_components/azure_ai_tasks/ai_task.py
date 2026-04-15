@@ -27,8 +27,11 @@ from .const import CONF_API_KEY, CONF_ENDPOINT, CONF_CHAT_MODEL, CONF_IMAGE_MODE
 _LOGGER = logging.getLogger(__name__)
 
 # API Constants
-API_VERSION_CHAT = "2024-02-15-preview"
+# 2024-10-21 is the current stable GA version for chat completions
+API_VERSION_CHAT = "2024-10-21"
+# 2025-04-01-preview is required for newer image models (gpt-image-1, FLUX)
 API_VERSION_IMAGE_LATEST = "2025-04-01-preview"
+# 2024-10-21 stable is used for legacy DALL-E models
 API_VERSION_IMAGE_LEGACY = "2024-10-21"
 
 # Model Constants
@@ -197,12 +200,15 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
         """Return whether the entity supports media attachments."""
         return self.supports_attachments
 
-    def _get_headers(self, use_bearer_auth: bool = False) -> dict[str, str]:
-        """Get standard headers for API requests."""
-        auth_header = f"Bearer {self._api_key}" if use_bearer_auth else self._api_key
+    def _get_headers(self) -> dict[str, str]:
+        """Get standard headers for API requests.
+
+        Azure OpenAI uses the 'api-key' header for API key authentication.
+        'Authorization: Bearer' is only for Entra ID (OAuth) tokens, not API keys.
+        """
         return {
             "Content-Type": "application/json",
-            "Authorization" if use_bearer_auth else "api-key": auth_header
+            "api-key": self._api_key,
         }
 
     def _handle_api_error(self, status: int, error_text: str, model: str) -> None:
@@ -243,102 +249,42 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
             raise HomeAssistantError("No image data found in vision model response")
 
     async def _process_attachment(self, attachment: Any, session: aiohttp.ClientSession) -> str | None:
-        """Process an attachment and return base64 encoded image data."""
+        """Process an attachment and return base64 encoded image data.
+
+        Modern HA Attachment objects (HA 2025.10+) always carry a 'path' field pointing
+        to the resolved file on disk.  We try that first before falling back to the
+        media_content_id resolution path.
+        """
         try:
-            _LOGGER.debug("_process_attachment: attachment=%r, type=%r, dir=%r", attachment, type(attachment), dir(attachment))
-            # Handle different media content types
-            if hasattr(attachment, 'media_content_id'):
-                media_id = attachment.media_content_id
-                media_type = getattr(attachment, 'media_content_type', '')
-                _LOGGER.debug("Processing attachment: media_id=%s, media_type=%s", media_id, media_type)
-                # Handle camera streams
+            # --- Primary: use the direct on-disk path (modern HA Attachment dataclass) ---
+            raw_path = getattr(attachment, 'path', None)
+            if raw_path is not None:
+                file_path = raw_path if isinstance(raw_path, Path) else Path(raw_path)
+                if file_path.is_file() and os.access(file_path, os.R_OK):
+                    _LOGGER.debug("Reading attachment from path: %s", file_path)
+                    async with aiofiles.open(file_path, 'rb') as f:
+                        return base64.b64encode(await f.read()).decode('utf-8')
+                _LOGGER.warning("Attachment path not accessible: %s", file_path)
+
+            # --- Fallback: resolve via media_content_id ---
+            media_id = getattr(attachment, 'media_content_id', None)
+            if media_id:
+                _LOGGER.debug("Resolving attachment via media_content_id: %s", media_id)
                 if media_id.startswith('media-source://camera/'):
                     return await self._process_camera_attachment(media_id, session)
-                # Handle uploaded images and local media files, including media-source://image/
-                elif (
-                    media_id.startswith('media-source://media_source/') or
-                    media_id.startswith('/media/local/') or
-                    'local/' in media_id or
-                    media_id.startswith('media-source://image/')
-                ):
-                    # For media-source://image/, prefer reading from path if available
-                    if hasattr(attachment, 'path'):
-                        _LOGGER.debug("media-source://image/ detected, using path attribute: %r", getattr(attachment, 'path', None))
-                        from pathlib import Path
-                        file_path = Path(attachment.path)
-                        _LOGGER.debug("Attachment has .path attribute: %r (type: %r)", file_path, type(file_path))
-                        _LOGGER.debug("Checking file existence: %r, is_file: %r", file_path.exists(), file_path.is_file())
-                        try:
-                            import os
-                            if not file_path.exists():
-                                _LOGGER.error("Attachment path does not exist: %r", file_path)
-                                return None
-                            if not file_path.is_file():
-                                _LOGGER.error("Attachment path is not a file: %r", file_path)
-                                return None
-                            if not os.access(file_path, os.R_OK):
-                                _LOGGER.error("Attachment path is not readable (permission denied): %r", file_path)
-                                return None
-                            _LOGGER.debug("Opening file for reading: %r", file_path)
-                            import aiofiles
-                            async with aiofiles.open(file_path, 'rb') as f:
-                                image_data = await f.read()
-                            _LOGGER.debug("Read %d bytes from file %r", len(image_data), file_path)
-                            return base64.b64encode(image_data).decode('utf-8')
-                        except Exception as err:
-                            import traceback
-                            _LOGGER.error("Exception reading attachment path: %s\nTraceback: %s (attachment=%r)", err, traceback.format_exc(), attachment)
-                    # fallback to media source handler
-                    return await self._process_media_source_attachment(media_id, session)
-                # Handle direct image URLs or other formats
-                elif media_type.startswith('image/'):
+                if media_id.startswith(('http://', 'https://')):
                     return await self._process_image_attachment(media_id, session)
-                else:
-                    _LOGGER.warning("Unsupported media type: %s (media_id=%s)", media_type, media_id)
-            # Try to handle generic file-like or data/content/path attributes (for generate_data and fallback)
-            elif hasattr(attachment, 'file'):
-                _LOGGER.debug("Attachment has .file attribute, attempting to read and encode.")
-                file_obj = getattr(attachment, 'file')
-                file_obj.seek(0)
-                image_data = file_obj.read()
-                return base64.b64encode(image_data).decode('utf-8')
-            elif hasattr(attachment, 'data'):
-                _LOGGER.debug("Attachment has .data attribute, attempting to encode.")
-                image_data = getattr(attachment, 'data')
-                return base64.b64encode(image_data).decode('utf-8')
-            elif hasattr(attachment, 'content'):
-                _LOGGER.debug("Attachment has .content attribute, attempting to encode.")
-                image_data = getattr(attachment, 'content')
-                return base64.b64encode(image_data).decode('utf-8')
-            elif hasattr(attachment, 'path'):
-                from pathlib import Path
-                file_path = Path(attachment.path)
-                _LOGGER.debug("Attachment has .path attribute (fallback): %r (type: %r)", file_path, type(file_path))
-                _LOGGER.debug("Checking file existence: %r, is_file: %r", file_path.exists(), file_path.is_file())
-                try:
-                    import os
-                    if not file_path.exists():
-                        _LOGGER.error("Attachment path does not exist: %r", file_path)
-                        return None
-                    if not file_path.is_file():
-                        _LOGGER.error("Attachment path is not a file: %r", file_path)
-                        return None
-                    if not os.access(file_path, os.R_OK):
-                        _LOGGER.error("Attachment path is not readable (permission denied): %r", file_path)
-                        return None
-                    _LOGGER.debug("Opening file for reading: %r", file_path)
-                    import aiofiles
-                    async with aiofiles.open(file_path, 'rb') as f:
-                        image_data = await f.read()
-                    _LOGGER.debug("Read %d bytes from file %r", len(image_data), file_path)
-                    return base64.b64encode(image_data).decode('utf-8')
-                except Exception as err:
-                    import traceback
-                    _LOGGER.error("Exception reading attachment path (fallback): %s\nTraceback: %s (attachment=%r)", err, traceback.format_exc(), attachment)
-            else:
-                _LOGGER.warning("Attachment does not have media_content_id, file, data, content, or path: %r", attachment)
+                return await self._process_media_source_attachment(media_id, session)
+
+            # --- Last resort: raw bytes in data/content attributes ---
+            for attr in ('data', 'content'):
+                value = getattr(attachment, attr, None)
+                if isinstance(value, bytes):
+                    return base64.b64encode(value).decode('utf-8')
+
+            _LOGGER.warning("Unable to extract image data from attachment: %r", attachment)
         except Exception as err:
-            _LOGGER.error("Error processing attachment: %s (attachment=%r)", err, attachment)
+            _LOGGER.error("Error processing attachment: %s", err)
         return None
 
     async def _process_camera_attachment(self, media_id: str, session: aiohttp.ClientSession) -> str | None:
@@ -428,38 +374,44 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
             return None
 
     def _extract_message_and_attachments(
-        self, 
-        chat_log: conversation.ChatLog, 
-        task: ai_task.GenImageTask | ai_task.GenDataTask
+        self,
+        chat_log: conversation.ChatLog,
+        task: ai_task.GenImageTask | ai_task.GenDataTask,
     ) -> tuple[str, list[Any]]:
-        """Extract user message and attachments from chat log and task."""
-        user_message = None
-        attachments = []
-        
-        # Process chat log content
+        """Extract user message and attachments from the task.
+
+        Uses task.instructions directly (available on both GenDataTask and GenImageTask)
+        and collects attachments from task.attachments.  Also scans UserContent items in
+        the chat_log so that any attachments added by the HA framework are included.
+        """
+        user_message: str = getattr(task, 'instructions', '') or ''
+
+        # Collect attachments: task field is authoritative, but also pull from chat_log
+        # in case HA's internal machinery attached extras to the UserContent.
+        seen_ids: set[int] = set()
+        attachments: list[Any] = []
+
+        def _add(att: Any) -> None:
+            oid = id(att)
+            if oid not in seen_ids:
+                seen_ids.add(oid)
+                attachments.append(att)
+
+        task_attachments = getattr(task, 'attachments', None) or []
+        for att in task_attachments:
+            _add(att)
+
         for content in chat_log.content:
             if isinstance(content, conversation.UserContent):
-                user_message = content.content
-            elif hasattr(content, 'media_content_id'):
-                attachments.append(content)
-            elif hasattr(content, 'attachments'):
-                if isinstance(content.attachments, list):
-                    attachments.extend(content.attachments)
-                else:
-                    attachments.append(content.attachments)
-            elif hasattr(content, 'content_type') and content.content_type.startswith('image/'):
-                attachments.append(content)
-        
-        # Process task attachments
-        if hasattr(task, 'attachments') and task.attachments:
-            if isinstance(task.attachments, list):
-                attachments.extend(task.attachments)
-            else:
-                attachments.append(task.attachments)
+                # Prefer task.instructions; fall back to chat_log if empty
+                if not user_message and content.content:
+                    user_message = content.content
+                for att in (content.attachments or []):
+                    _add(att)
 
         if not user_message:
-            raise HomeAssistantError("No task instructions found in chat log")
-            
+            raise HomeAssistantError("No task instructions found")
+
         return user_message, attachments
 
     async def _build_chat_payload(
@@ -477,42 +429,44 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
             message_content: list[dict[str, Any]] = [{"type": "text", "text": user_message}]
             for attachment in attachments:
                 try:
+                    mime_type = getattr(attachment, 'mime_type', None) or 'image/jpeg'
                     image_data = await self._process_attachment(attachment, session)
                     if image_data:
                         message_content.append({
                             "type": "image_url",
                             "image_url": {
-                                "url": f"data:image/jpeg;base64,{image_data}"
+                                "url": f"data:{mime_type};base64,{image_data}"
                             }
                         })
                 except Exception as err:
                     _LOGGER.warning("Failed to process attachment: %s", err)
-            
+
             return {
                 "messages": [{"role": "user", "content": message_content}],
                 token_param: MAX_TOKENS,
-                "temperature": DEFAULT_TEMPERATURE
+                "temperature": DEFAULT_TEMPERATURE,
             }
         else:
             return {
                 "messages": [{"role": "user", "content": user_message}],
                 token_param: MAX_TOKENS,
-                "temperature": DEFAULT_TEMPERATURE
+                "temperature": DEFAULT_TEMPERATURE,
             }
 
-    async def _handle_flux_image_edit(
-        self, 
-        session: aiohttp.ClientSession, 
-        user_message: str, 
+    async def _handle_image_edit(
+        self,
+        session: aiohttp.ClientSession,
+        user_message: str,
         attachments: list[Any],
         image_model: str,
-        chat_log: conversation.ChatLog
+        chat_log: conversation.ChatLog,
     ) -> ai_task.GenImageTaskResult:
-        """Handle FLUX image editing with attachments."""
-        # Process the first attachment for editing
+        """Handle image editing for models that support /images/edits (gpt-image-1, FLUX).
+
+        Uses the first attachment as the source image.
+        """
         image_data_b64 = await self._process_attachment(attachments[0], session)
         if not image_data_b64:
-            _LOGGER.error("Failed to process image attachment for editing. Attachments: %r", attachments)
             raise HomeAssistantError("Failed to process image attachment for editing.")
 
         url = f"{self._endpoint}/openai/deployments/{image_model}/images/edits"
@@ -522,54 +476,20 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
             "prompt": user_message,
             "image": image_data_b64,
             "response_format": "b64_json",
-            "size": DEFAULT_IMAGE_SIZE
+            "size": DEFAULT_IMAGE_SIZE,
         }
-        
+
         async with session.post(
             url,
             headers=headers,
             json=payload,
-            params={"api-version": API_VERSION_IMAGE_LATEST}
+            params={"api-version": API_VERSION_IMAGE_LATEST},
         ) as response:
             if response.status != 200:
                 error_text = await response.text()
                 _LOGGER.error("Azure AI image edit error: %s (status=%s)", error_text, response.status)
                 self._handle_api_error(response.status, error_text, image_model)
-            
-            result = await response.json()
-            return await self._process_image_generation_result(
-                result, user_message, image_model, chat_log, DEFAULT_WIDTH, DEFAULT_HEIGHT, session
-            )
 
-    async def _handle_flux_image_generation(
-        self,
-        session: aiohttp.ClientSession,
-        user_message: str,
-        image_model: str,
-        chat_log: conversation.ChatLog
-    ) -> ai_task.GenImageTaskResult:
-        """Handle FLUX image generation without attachments."""
-        headers = self._get_headers()
-        payload = {
-            "prompt": user_message,
-            "model": image_model,
-            "n": 1,
-            "size": DEFAULT_IMAGE_SIZE,
-            "response_format": "b64_json"
-        }
-        url = f"{self._endpoint}/openai/deployments/{image_model}/images/generations"
-        
-        async with session.post(
-            url,
-            headers=headers,
-            json=payload,
-            params={"api-version": API_VERSION_IMAGE_LATEST}
-        ) as response:
-            if response.status != 200:
-                error_text = await response.text()
-                _LOGGER.error("Azure AI image generation error: %s (status=%s)", error_text, response.status)
-                self._handle_api_error(response.status, error_text, image_model)
-            
             result = await response.json()
             return await self._process_image_generation_result(
                 result, user_message, image_model, chat_log, DEFAULT_WIDTH, DEFAULT_HEIGHT, session
@@ -650,17 +570,18 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
         
         for attachment in attachments:
             try:
+                mime_type = getattr(attachment, 'mime_type', None) or 'image/jpeg'
                 image_data = await self._process_attachment(attachment, session)
                 if image_data:
                     message_content.append({
                         "type": "image_url",
                         "image_url": {
-                            "url": f"data:image/jpeg;base64,{image_data}"
+                            "url": f"data:{mime_type};base64,{image_data}"
                         }
                     })
             except Exception as err:
                 _LOGGER.warning("Failed to process attachment: %s", err)
-        
+
         # Determine which token parameter to use based on the model
         token_param = "max_completion_tokens" if _uses_max_completion_tokens(image_model) else "max_tokens"
         
@@ -694,42 +615,32 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
         session: aiohttp.ClientSession,
         user_message: str,
         image_model: str,
-        chat_log: conversation.ChatLog
+        chat_log: conversation.ChatLog,
     ) -> ai_task.GenImageTaskResult:
-        """Handle standard text-to-image generation."""
-        payload = {
+        """Handle standard text-to-image generation (no input image)."""
+        payload: dict[str, Any] = {
             "prompt": user_message,
             "model": image_model,
             "n": 1,
+            "response_format": "b64_json",
+            "size": DEFAULT_IMAGE_SIZE,
         }
-        
-        # Configure parameters based on the specific model
-        api_version = API_VERSION_IMAGE_LEGACY
+
+        # Configure API version and extra params per model
         if image_model == "gpt-image-1":
-            payload.update({
-                "size": DEFAULT_IMAGE_SIZE,
-                "quality": "high",
-                "output_format": "png",
-                "output_compression": 100,
-            })
+            payload.update({"quality": "high", "output_format": "png"})
+            api_version = API_VERSION_IMAGE_LATEST
+        elif image_model.lower() == FLUX_MODEL:
+            # FLUX uses the latest preview endpoint; no extra params needed beyond defaults
             api_version = API_VERSION_IMAGE_LATEST
         elif image_model == "dall-e-3":
-            payload.update({
-                "size": DEFAULT_IMAGE_SIZE,
-                "quality": "standard",
-                "style": "vivid",
-                "response_format": "b64_json",
-            })
+            payload.update({"quality": "standard", "style": "vivid"})
+            api_version = API_VERSION_IMAGE_LEGACY
         elif image_model == "dall-e-2":
-            payload.update({
-                "size": DEFAULT_IMAGE_SIZE,
-                "response_format": "b64_json",
-            })
+            api_version = API_VERSION_IMAGE_LEGACY
         else:
-            payload.update({
-                "size": DEFAULT_IMAGE_SIZE,
-                "quality": "standard",
-            })
+            payload.update({"quality": "standard"})
+            api_version = API_VERSION_IMAGE_LATEST
 
         url = f"{self._endpoint}/openai/deployments/{image_model}/images/generations"
         headers = self._get_headers()
@@ -756,39 +667,34 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
         task: ai_task.GenImageTask,
         chat_log: conversation.ChatLog,
     ) -> ai_task.GenImageTaskResult:
-        """Handle a generate image task, including attachments for vision models."""
+        """Handle a generate image task, including attachments for vision/edit models."""
         if not self.image_model:
             raise HomeAssistantError("No image model configured for this entity")
 
         session = async_get_clientsession(self._hass)
         user_message, attachments = self._extract_message_and_attachments(chat_log, task)
-
         image_model = self.image_model
 
-        # Handle FLUX.1-Kontext-pro model specifically
-        if image_model.lower() == FLUX_MODEL:
-            if attachments:
-                return await self._handle_flux_image_edit(
+        try:
+            # Models that support image editing via /images/edits (with an input image)
+            IMAGE_EDIT_MODELS = {FLUX_MODEL, "gpt-image-1"}
+            if image_model.lower() in IMAGE_EDIT_MODELS and attachments:
+                return await self._handle_image_edit(
                     session, user_message, attachments, image_model, chat_log
                 )
-            else:
-                return await self._handle_flux_image_generation(
-                    session, user_message, image_model, chat_log
-                )
 
-        # Handle other image models
-        try:
-            # Vision models with attachments
+            # Vision chat models that accept an image input via chat/completions
+            # (e.g. gpt-4v / gpt-4o configured as the image model for analysis tasks)
             if self._is_vision_model(image_model) and attachments:
                 return await self._handle_vision_model_request(
                     session, user_message, attachments, image_model, chat_log
                 )
-            # Standard text-to-image generation
-            else:
-                return await self._handle_standard_image_generation(
-                    session, user_message, image_model, chat_log
-                )
-                
+
+            # All other models: text-to-image generation
+            return await self._handle_standard_image_generation(
+                session, user_message, image_model, chat_log
+            )
+
         except aiohttp.ClientError as err:
             _LOGGER.error("Error communicating with Azure AI: %s", err)
             raise HomeAssistantError(f"Error communicating with Azure AI: {err}") from err
@@ -828,7 +734,7 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
         # Build the payload using the helper method
         payload = await self._build_chat_payload(user_message, attachments, session, self.chat_model)
         model_to_use = self.chat_model
-        headers = self._get_headers(use_bearer_auth=True)
+        headers = self._get_headers()
 
         try:
             async with session.post(
