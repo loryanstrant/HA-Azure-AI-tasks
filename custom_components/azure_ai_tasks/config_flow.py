@@ -83,6 +83,10 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not chat_model and not image_model:
                 errors["base"] = "no_models_configured"
             else:
+                # Normalise the endpoint before storing and testing
+                user_input[CONF_ENDPOINT] = self._normalise_endpoint(
+                    user_input[CONF_ENDPOINT]
+                )
                 await self._test_credentials(user_input[CONF_ENDPOINT], user_input[CONF_API_KEY])
         except Exception:  # pylint: disable=broad-except
             _LOGGER.exception("Unexpected exception")
@@ -94,32 +98,57 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
         )
 
+    @staticmethod
+    def _normalise_endpoint(endpoint: str) -> str:
+        """Strip API path suffixes the user may have copied from the Azure portal."""
+        _SUFFIXES = (
+            "/openai/v1/responses",
+            "/openai/v1/chat/completions",
+            "/openai/v1/images/generations",
+            "/openai/v1/images/edits",
+            "/openai/v1/",
+            "/openai/v1",
+        )
+        endpoint = endpoint.rstrip("/")
+        for suffix in _SUFFIXES:
+            if endpoint.endswith(suffix):
+                endpoint = endpoint[: -len(suffix)].rstrip("/")
+                break
+        return endpoint
+
     async def _test_credentials(self, endpoint: str, api_key: str) -> bool:
         """Test connectivity and authentication against the Azure OpenAI endpoint.
 
-        Azure OpenAI uses the 'api-key' header for API key authentication.
-        We probe the /openai/models endpoint which is available on all deployments
-        and returns 200 with a valid key or 401 with an invalid one.
+        Supports both:
+        - Traditional Azure OpenAI  (*.openai.azure.com)
+        - New Azure AI Foundry      (*.services.ai.azure.com)
+
+        The endpoint is normalised before probing so users can paste the full
+        URL from the portal (e.g. including '/openai/v1/responses').
         """
+        endpoint = self._normalise_endpoint(endpoint)
         session = async_get_clientsession(self.hass)
         headers = {
             "Content-Type": "application/json",
             "api-key": api_key,
         }
 
-        probe_url = endpoint.rstrip("/") + "/openai/models"
-        async with session.get(
-            probe_url,
-            headers=headers,
-            params={"api-version": "2024-10-21"},
-        ) as response:
+        is_foundry = "services.ai.azure.com" in endpoint
+        if is_foundry:
+            # Foundry /v1/ endpoint – versioning is baked into the path
+            probe_url = endpoint + "/openai/v1/models"
+            params: dict = {}
+        else:
+            # Traditional Azure OpenAI
+            probe_url = endpoint + "/openai/models"
+            params = {"api-version": "2024-10-21"}
+
+        async with session.get(probe_url, headers=headers, params=params) as response:
             if response.status == 401:
                 raise Exception("Invalid API key")
-            if response.status == 404:
-                # Endpoint exists but models path not found – still reachable
-                return True
             if response.status >= 500:
                 raise Exception("Cannot connect to Azure AI endpoint")
+            # 404 means the endpoint is reachable but no models deployed yet – acceptable
 
         return True
 

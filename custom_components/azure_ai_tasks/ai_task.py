@@ -26,7 +26,7 @@ from .const import CONF_API_KEY, CONF_ENDPOINT, CONF_CHAT_MODEL, CONF_IMAGE_MODE
 
 _LOGGER = logging.getLogger(__name__)
 
-# API Constants
+# API Constants (traditional Azure OpenAI endpoints only)
 # 2024-10-21 is the current stable GA version for chat completions
 API_VERSION_CHAT = "2024-10-21"
 # 2025-04-01-preview is required for newer image models (gpt-image-1, FLUX)
@@ -37,6 +37,17 @@ API_VERSION_IMAGE_LEGACY = "2024-10-21"
 # Model Constants
 VISION_MODELS = ["gpt-image-1", "flux.1-kontext-pro", "gpt-4v", "gpt-4o"]
 FLUX_MODEL = "flux.1-kontext-pro"
+
+# URL path suffixes that users may accidentally copy from the Azure AI Foundry portal.
+# These are stripped when the endpoint is stored, leaving just the base URL.
+_FOUNDRY_PATH_SUFFIXES = (
+    "/openai/v1/responses",
+    "/openai/v1/chat/completions",
+    "/openai/v1/images/generations",
+    "/openai/v1/images/edits",
+    "/openai/v1/",
+    "/openai/v1",
+)
 
 # Image Generation Constants
 DEFAULT_IMAGE_SIZE = "1024x1024"
@@ -118,7 +129,7 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
     ) -> None:
         """Initialize the Azure AI Task entity."""
         self._name = name
-        self._endpoint = endpoint.rstrip("/")
+        self._endpoint = self._normalise_endpoint(endpoint)
         self._api_key = api_key
         self._chat_model = chat_model
         self._image_model = image_model
@@ -149,6 +160,64 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
                 
         self._attr_supported_features = features
     
+    # ------------------------------------------------------------------
+    # Endpoint helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _normalise_endpoint(endpoint: str) -> str:
+        """Return a clean base URL, stripping any API-path suffix the user may have
+        pasted from the Azure AI Foundry portal (e.g. '/openai/v1/responses')."""
+        endpoint = endpoint.rstrip("/")
+        for suffix in _FOUNDRY_PATH_SUFFIXES:
+            if endpoint.endswith(suffix):
+                endpoint = endpoint[: -len(suffix)].rstrip("/")
+                break
+        return endpoint
+
+    @property
+    def _is_foundry_endpoint(self) -> bool:
+        """True when the configured endpoint is a new Azure AI Foundry URL.
+
+        Azure AI Foundry projects use 'services.ai.azure.com' as the host,
+        while traditional Azure OpenAI resources use 'openai.azure.com'.
+        The two backends have different URL structures and different payload
+        conventions (model-in-path vs model-in-body, api-version vs none).
+        """
+        return "services.ai.azure.com" in self._endpoint
+
+    def _build_url(self, api_type: str, model: str) -> str:
+        """Build the correct endpoint URL for the given API call type.
+
+        api_type must be one of: 'chat', 'images_gen', 'images_edit'.
+        """
+        if self._is_foundry_endpoint:
+            # New Foundry endpoints: no deployment name in path, versioned via /v1/
+            _paths = {
+                "chat": "/openai/v1/chat/completions",
+                "images_gen": "/openai/v1/images/generations",
+                "images_edit": "/openai/v1/images/edits",
+            }
+        else:
+            # Traditional Azure OpenAI: deployment name embedded in path
+            _paths = {
+                "chat": f"/openai/deployments/{model}/chat/completions",
+                "images_gen": f"/openai/deployments/{model}/images/generations",
+                "images_edit": f"/openai/deployments/{model}/images/edits",
+            }
+        return self._endpoint + _paths[api_type]
+
+    def _api_params(self, api_version: str) -> dict[str, str]:
+        """Return the api-version query-string for traditional endpoints.
+
+        Foundry /v1/ endpoints embed versioning in the path; no query param needed.
+        """
+        if self._is_foundry_endpoint:
+            return {}
+        return {"api-version": api_version}
+
+    # ------------------------------------------------------------------
+
     @property
     def name(self) -> str:
         """Return the name of the entity."""
@@ -419,12 +488,15 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
         user_message: str,
         attachments: list[Any],
         session: aiohttp.ClientSession,
-        model: str
+        model: str,
     ) -> dict[str, Any]:
-        """Build chat completion payload with or without attachments."""
-        # Determine which token parameter to use based on the model
+        """Build chat completion payload with or without attachments.
+
+        For Foundry (/v1/) endpoints the model must be specified in the request body.
+        For traditional Azure OpenAI endpoints the model is encoded in the URL path.
+        """
         token_param = "max_completion_tokens" if _uses_max_completion_tokens(model) else "max_tokens"
-        
+
         if attachments:
             message_content: list[dict[str, Any]] = [{"type": "text", "text": user_message}]
             for attachment in attachments:
@@ -434,24 +506,28 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
                     if image_data:
                         message_content.append({
                             "type": "image_url",
-                            "image_url": {
-                                "url": f"data:{mime_type};base64,{image_data}"
-                            }
+                            "image_url": {"url": f"data:{mime_type};base64,{image_data}"},
                         })
                 except Exception as err:
                     _LOGGER.warning("Failed to process attachment: %s", err)
 
-            return {
+            payload: dict[str, Any] = {
                 "messages": [{"role": "user", "content": message_content}],
                 token_param: MAX_TOKENS,
                 "temperature": DEFAULT_TEMPERATURE,
             }
         else:
-            return {
+            payload = {
                 "messages": [{"role": "user", "content": user_message}],
                 token_param: MAX_TOKENS,
                 "temperature": DEFAULT_TEMPERATURE,
             }
+
+        # Foundry endpoints require the model name in the request body
+        if self._is_foundry_endpoint:
+            payload["model"] = model
+
+        return payload
 
     async def _handle_image_edit(
         self,
@@ -469,7 +545,7 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
         if not image_data_b64:
             raise HomeAssistantError("Failed to process image attachment for editing.")
 
-        url = f"{self._endpoint}/openai/deployments/{image_model}/images/edits"
+        url = self._build_url("images_edit", image_model)
         headers = self._get_headers()
         payload = {
             "model": image_model,
@@ -483,7 +559,7 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
             url,
             headers=headers,
             json=payload,
-            params={"api-version": API_VERSION_IMAGE_LATEST},
+            params=self._api_params(API_VERSION_IMAGE_LATEST),
         ) as response:
             if response.status != 200:
                 error_text = await response.text()
@@ -584,21 +660,21 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
 
         # Determine which token parameter to use based on the model
         token_param = "max_completion_tokens" if _uses_max_completion_tokens(image_model) else "max_tokens"
-        
-        payload = {
+
+        payload: dict[str, Any] = {
             "messages": [{"role": "user", "content": message_content}],
             token_param: MAX_TOKENS,
             "temperature": DEFAULT_TEMPERATURE,
-            "model": image_model
+            "model": image_model,
         }
-        url = f"{self._endpoint}/openai/deployments/{image_model}/chat/completions"
+        url = self._build_url("chat", image_model)
         headers = self._get_headers()
-        
+
         async with session.post(
             url,
             headers=headers,
             json=payload,
-            params={"api-version": API_VERSION_IMAGE_LATEST}
+            params=self._api_params(API_VERSION_IMAGE_LATEST),
         ) as response:
             if response.status != 200:
                 error_text = await response.text()
@@ -642,14 +718,14 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
             payload.update({"quality": "standard"})
             api_version = API_VERSION_IMAGE_LATEST
 
-        url = f"{self._endpoint}/openai/deployments/{image_model}/images/generations"
+        url = self._build_url("images_gen", image_model)
         headers = self._get_headers()
-        
+
         async with session.post(
             url,
             headers=headers,
             json=payload,
-            params={"api-version": api_version}
+            params=self._api_params(api_version),
         ) as response:
             if response.status != 200:
                 error_text = await response.text()
@@ -738,10 +814,10 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
 
         try:
             async with session.post(
-                f"{self._endpoint}/openai/deployments/{model_to_use}/chat/completions",
+                self._build_url("chat", model_to_use),
                 headers=headers,
                 json=payload,
-                params={"api-version": API_VERSION_CHAT}
+                params=self._api_params(API_VERSION_CHAT),
             ) as response:
                 if response.status != 200:
                     error_text = await response.text()
