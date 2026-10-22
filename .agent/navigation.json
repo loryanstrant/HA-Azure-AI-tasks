@@ -1,0 +1,586 @@
+{
+  "schema_version": "1.0",
+  "repository": "HA-Azure-AI-tasks",
+  "identity": {
+    "description": "A Home Assistant custom integration that facilitates AI tasks using Azure AI services.",
+    "default_branch": "main",
+    "languages": {
+      "Python": 9
+    },
+    "topics": [],
+    "licence": "MIT License",
+    "file_count": 24
+  },
+  "start_here": {
+    "readme": "README.md",
+    "agents_md": "AGENTS.md",
+    "entry_points": [],
+    "decision_records": [],
+    "build_config": [
+      "custom_components/azure_ai_tasks/manifest.json",
+      "hacs.json",
+      "pytest.ini"
+    ],
+    "source_roots": [
+      "custom_components"
+    ]
+  },
+  "documentation": [
+    {
+      "path": ".github/copilot-instructions.md",
+      "title": "Copilot instructions — HA-Azure-AI-tasks",
+      "lines": 34,
+      "headings": [
+        {
+          "level": 2,
+          "text": "What this repo is",
+          "anchor": "what-this-repo-is"
+        },
+        {
+          "level": 2,
+          "text": "Repo shape",
+          "anchor": "repo-shape"
+        },
+        {
+          "level": 2,
+          "text": "Conventions",
+          "anchor": "conventions"
+        },
+        {
+          "level": 2,
+          "text": "Never",
+          "anchor": "never"
+        }
+      ]
+    },
+    {
+      "path": "CHANGELOG.md",
+      "title": "Changelog",
+      "lines": 63,
+      "headings": [
+        {
+          "level": 2,
+          "text": "2.4.0",
+          "anchor": "240"
+        },
+        {
+          "level": 3,
+          "text": "Changed",
+          "anchor": "changed"
+        },
+        {
+          "level": 2,
+          "text": "2.3.0",
+          "anchor": "230"
+        },
+        {
+          "level": 3,
+          "text": "Added",
+          "anchor": "added"
+        },
+        {
+          "level": 3,
+          "text": "Changed",
+          "anchor": "changed-1"
+        },
+        {
+          "level": 2,
+          "text": "2.2.0",
+          "anchor": "220"
+        },
+        {
+          "level": 2,
+          "text": "2.1.0",
+          "anchor": "210"
+        },
+        {
+          "level": 2,
+          "text": "2.0.0",
+          "anchor": "200"
+        }
+      ]
+    },
+    {
+      "path": "README.md",
+      "title": "Azure AI Tasks - Home Assistant Integration",
+      "lines": 198,
+      "headings": [
+        {
+          "level": 2,
+          "text": "Features",
+          "anchor": "features"
+        },
+        {
+          "level": 2,
+          "text": "Installation",
+          "anchor": "installation"
+        },
+        {
+          "level": 3,
+          "text": "Via HACS (Recommended)",
+          "anchor": "via-hacs-recommended"
+        },
+        {
+          "level": 3,
+          "text": "Manual Installation",
+          "anchor": "manual-installation"
+        },
+        {
+          "level": 2,
+          "text": "Configuration",
+          "anchor": "configuration"
+        },
+        {
+          "level": 3,
+          "text": "Reconfiguration",
+          "anchor": "reconfiguration"
+        },
+        {
+          "level": 2,
+          "text": "Usage",
+          "anchor": "usage"
+        },
+        {
+          "level": 3,
+          "text": "Chat/Text Generation",
+          "anchor": "chattext-generation"
+        },
+        {
+          "level": 3,
+          "text": "🎨 Image Generation",
+          "anchor": "-image-generation"
+        },
+        {
+          "level": 3,
+          "text": "Image/Video Analysis with Attachments",
+          "anchor": "imagevideo-analysis-with-attachments"
+        },
+        {
+          "level": 3,
+          "text": "Available Models",
+          "anchor": "available-models"
+        },
+        {
+          "level": 2,
+          "text": "Requirements",
+          "anchor": "requirements"
+        },
+        {
+          "level": 2,
+          "text": "Contributing",
+          "anchor": "contributing"
+        },
+        {
+          "level": 2,
+          "text": "Development Approach",
+          "anchor": "development-approach"
+        },
+        {
+          "level": 2,
+          "text": "License",
+          "anchor": "license"
+        },
+        {
+          "level": 2,
+          "text": "Support",
+          "anchor": "support"
+        }
+      ]
+    },
+    {
+      "path": "info.md",
+      "title": "Info",
+      "lines": 33,
+      "headings": [
+        {
+          "level": 2,
+          "text": "Azure AI Tasks Integration",
+          "anchor": "azure-ai-tasks-integration"
+        },
+        {
+          "level": 3,
+          "text": "Key Features:",
+          "anchor": "key-features"
+        },
+        {
+          "level": 3,
+          "text": "Configuration:",
+          "anchor": "configuration"
+        },
+        {
+          "level": 3,
+          "text": "Model Selection:",
+          "anchor": "model-selection"
+        },
+        {
+          "level": 3,
+          "text": "Usage:",
+          "anchor": "usage"
+        }
+      ]
+    }
+  ],
+  "code": {
+    "source_roots": [
+      "custom_components"
+    ],
+    "symbol_source": "repomix (tree-sitter signatures)",
+    "routes": [],
+    "files": [
+      {
+        "path": "custom_components/azure_ai_tasks/__init__.py",
+        "symbols": [
+          {
+            "kind": "const",
+            "name": "PLATFORMS",
+            "parent": "",
+            "signature": "PLATFORMS: list[Platform] = [Platform.AI_TASK]"
+          },
+          {
+            "kind": "const",
+            "name": "MIN_HA_VERSION",
+            "parent": "",
+            "signature": "MIN_HA_VERSION = \"2025.10.0\""
+          },
+          {
+            "kind": "function",
+            "name": "async_migrate_entry",
+            "parent": "",
+            "signature": "async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool"
+          },
+          {
+            "kind": "function",
+            "name": "async_setup_entry",
+            "parent": "",
+            "signature": "async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool"
+          },
+          {
+            "kind": "function",
+            "name": "async_update_options",
+            "parent": "",
+            "signature": "async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None"
+          },
+          {
+            "kind": "function",
+            "name": "async_unload_entry",
+            "parent": "",
+            "signature": "async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool"
+          }
+        ]
+      },
+      {
+        "path": "custom_components/azure_ai_tasks/ai_task.py",
+        "symbols": [
+          {
+            "kind": "const",
+            "name": "API_VERSION_CHAT",
+            "parent": "",
+            "signature": "API_VERSION_CHAT = \"2025-04-01-preview\""
+          },
+          {
+            "kind": "const",
+            "name": "API_VERSION_IMAGE_LATEST",
+            "parent": "",
+            "signature": "API_VERSION_IMAGE_LATEST = \"2025-04-01-preview\""
+          },
+          {
+            "kind": "const",
+            "name": "API_VERSION_IMAGE_LEGACY",
+            "parent": "",
+            "signature": "API_VERSION_IMAGE_LEGACY = \"2024-10-21\""
+          },
+          {
+            "kind": "const",
+            "name": "VISION_MODELS",
+            "parent": "",
+            "signature": "VISION_MODELS = [\"gpt-image-1\", \"flux.1-kontext-pro\", \"gpt-4v\", \"gpt-4o\"]"
+          },
+          {
+            "kind": "const",
+            "name": "FLUX_MODEL",
+            "parent": "",
+            "signature": "FLUX_MODEL = \"flux.1-kontext-pro\""
+          },
+          {
+            "kind": "const",
+            "name": "DEFAULT_IMAGE_SIZE",
+            "parent": "",
+            "signature": "DEFAULT_IMAGE_SIZE = \"1024x1024\""
+          },
+          {
+            "kind": "const",
+            "name": "DEFAULT_WIDTH",
+            "parent": "",
+            "signature": "DEFAULT_WIDTH = 1024"
+          },
+          {
+            "kind": "const",
+            "name": "DEFAULT_HEIGHT",
+            "parent": "",
+            "signature": "DEFAULT_HEIGHT = 1024"
+          },
+          {
+            "kind": "const",
+            "name": "DEFAULT_MIME_TYPE",
+            "parent": "",
+            "signature": "DEFAULT_MIME_TYPE = \"image/png\""
+          },
+          {
+            "kind": "const",
+            "name": "MAX_TOKENS",
+            "parent": "",
+            "signature": "MAX_TOKENS = 1000"
+          },
+          {
+            "kind": "const",
+            "name": "MAX_COMPLETION_TOKENS",
+            "parent": "",
+            "signature": "MAX_COMPLETION_TOKENS = 4000"
+          },
+          {
+            "kind": "const",
+            "name": "DEFAULT_TEMPERATURE",
+            "parent": "",
+            "signature": "DEFAULT_TEMPERATURE = 0.7"
+          },
+          {
+            "kind": "const",
+            "name": "MEDIA_SOURCE_CAMERA",
+            "parent": "",
+            "signature": "MEDIA_SOURCE_CAMERA = \"media-source://camera/\""
+          },
+          {
+            "kind": "const",
+            "name": "MEDIA_SOURCE_LOCAL",
+            "parent": "",
+            "signature": "MEDIA_SOURCE_LOCAL = \"media-source://media_source/local/\""
+          },
+          {
+            "kind": "const",
+            "name": "MEDIA_SOURCE_IMAGE",
+            "parent": "",
+            "signature": "MEDIA_SOURCE_IMAGE = \"media-source://image/\""
+          },
+          {
+            "kind": "const",
+            "name": "MEDIA_LOCAL_PATH",
+            "parent": "",
+            "signature": "MEDIA_LOCAL_PATH = \"/media/local/\""
+          },
+          {
+            "kind": "class",
+            "name": "AzureAITaskEntity",
+            "parent": "",
+            "signature": "class AzureAITaskEntity(ai_task.AITaskEntity)"
+          },
+          {
+            "kind": "function",
+            "name": "name",
+            "parent": "AzureAITaskEntity",
+            "signature": "name(self) -> str"
+          },
+          {
+            "kind": "function",
+            "name": "chat_model",
+            "parent": "AzureAITaskEntity",
+            "signature": "chat_model(self) -> str | None"
+          },
+          {
+            "kind": "function",
+            "name": "image_model",
+            "parent": "AzureAITaskEntity",
+            "signature": "image_model(self) -> str | None"
+          },
+          {
+            "kind": "function",
+            "name": "supported_features",
+            "parent": "AzureAITaskEntity",
+            "signature": "supported_features(self) -> int"
+          },
+          {
+            "kind": "function",
+            "name": "supports_attachments",
+            "parent": "AzureAITaskEntity",
+            "signature": "supports_attachments(self) -> bool"
+          },
+          {
+            "kind": "function",
+            "name": "supports_media_attachments",
+            "parent": "AzureAITaskEntity",
+            "signature": "supports_media_attachments(self) -> bool"
+          }
+        ]
+      },
+      {
+        "path": "custom_components/azure_ai_tasks/config_flow.py",
+        "symbols": [
+          {
+            "kind": "const",
+            "name": "STEP_USER_DATA_SCHEMA",
+            "parent": "",
+            "signature": "STEP_USER_DATA_SCHEMA = vol.Schema("
+          },
+          {
+            "kind": "class",
+            "name": "ConfigFlow",
+            "parent": "",
+            "signature": "class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN)"
+          },
+          {
+            "kind": "function",
+            "name": "async_get_options_flow",
+            "parent": "ConfigFlow",
+            "signature": "async_get_options_flow(config_entry)"
+          },
+          {
+            "kind": "function",
+            "name": "async_step_import",
+            "parent": "ConfigFlow",
+            "signature": "async_step_import(self, import_data: dict[str, Any]) -> FlowResult"
+          },
+          {
+            "kind": "class",
+            "name": "OptionsFlowHandler",
+            "parent": "",
+            "signature": "class OptionsFlowHandler(config_entries.OptionsFlow)"
+          }
+        ]
+      },
+      {
+        "path": "custom_components/azure_ai_tasks/const.py",
+        "symbols": [
+          {
+            "kind": "const",
+            "name": "DOMAIN",
+            "parent": "",
+            "signature": "DOMAIN = \"azure_ai_tasks\""
+          },
+          {
+            "kind": "const",
+            "name": "CONFIG_ENTRY_VERSION",
+            "parent": "",
+            "signature": "CONFIG_ENTRY_VERSION = 2"
+          },
+          {
+            "kind": "const",
+            "name": "ISSUE_MIGRATION_DOWNGRADE",
+            "parent": "",
+            "signature": "ISSUE_MIGRATION_DOWNGRADE = \"migrate_downgrade\""
+          },
+          {
+            "kind": "const",
+            "name": "ISSUE_MIGRATION_INCOMPLETE",
+            "parent": "",
+            "signature": "ISSUE_MIGRATION_INCOMPLETE = \"migrate_incomplete_config\""
+          },
+          {
+            "kind": "const",
+            "name": "ISSUE_MIGRATION_INCOMPLETE_RESTART",
+            "parent": "",
+            "signature": "ISSUE_MIGRATION_INCOMPLETE_RESTART = \"migrate_incomplete_config_restart\""
+          },
+          {
+            "kind": "const",
+            "name": "CONF_ENDPOINT",
+            "parent": "",
+            "signature": "CONF_ENDPOINT = \"endpoint\""
+          },
+          {
+            "kind": "const",
+            "name": "CONF_API_KEY",
+            "parent": "",
+            "signature": "CONF_API_KEY = \"api_key\""
+          },
+          {
+            "kind": "const",
+            "name": "CONF_CHAT_MODEL",
+            "parent": "",
+            "signature": "CONF_CHAT_MODEL = \"chat_model\""
+          },
+          {
+            "kind": "const",
+            "name": "CONF_IMAGE_MODEL",
+            "parent": "",
+            "signature": "CONF_IMAGE_MODEL = \"image_model\""
+          },
+          {
+            "kind": "const",
+            "name": "V1_HOST_MARKER",
+            "parent": "",
+            "signature": "V1_HOST_MARKER = \"services.ai.azure.com\""
+          },
+          {
+            "kind": "const",
+            "name": "V1_PATH_MARKER",
+            "parent": "",
+            "signature": "V1_PATH_MARKER = \"/openai/v1\""
+          },
+          {
+            "kind": "const",
+            "name": "DEFAULT_NAME",
+            "parent": "",
+            "signature": "DEFAULT_NAME = \"Azure AI Tasks\""
+          },
+          {
+            "kind": "const",
+            "name": "DEFAULT_CHAT_MODEL",
+            "parent": "",
+            "signature": "DEFAULT_CHAT_MODEL = \"gpt-4o\""
+          },
+          {
+            "kind": "const",
+            "name": "DEFAULT_IMAGE_MODEL",
+            "parent": "",
+            "signature": "DEFAULT_IMAGE_MODEL = \"dall-e-3\""
+          },
+          {
+            "kind": "const",
+            "name": "CHAT_MODELS",
+            "parent": "",
+            "signature": "CHAT_MODELS = ["
+          },
+          {
+            "kind": "const",
+            "name": "IMAGE_MODELS",
+            "parent": "",
+            "signature": "IMAGE_MODELS = ["
+          }
+        ]
+      },
+      {
+        "path": "custom_components/azure_ai_tasks/repairs.py",
+        "symbols": [
+          {
+            "kind": "class",
+            "name": "MigrationRepairFlow",
+            "parent": "",
+            "signature": "class MigrationRepairFlow(RepairsFlow)"
+          }
+        ]
+      }
+    ]
+  },
+  "tests": [
+    "tests/__init__.py",
+    "tests/conftest.py",
+    "tests/test_endpoint_surface.py",
+    "tests/test_migration.py"
+  ],
+  "operations": [
+    ".gitea/workflows/tests.yaml",
+    ".github/workflows/release.yaml",
+    ".github/workflows/validate.yaml"
+  ],
+  "limitations": {
+    "unparsed_languages": [],
+    "excluded_dirs": [],
+    "code_map_truncated": false,
+    "code_map_symbols_capped": true,
+    "tracked_files_only": true
+  },
+  "generated": {
+    "source_commit": "e440649ef9fa7d7aae4e87be6dad4b2fd8219489",
+    "content_hash": "5bfb56f07a832264",
+    "generator": "navgen"
+  }
+}
