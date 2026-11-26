@@ -9,7 +9,13 @@
           "endpoint": "Azure AI Endpoint URL (openai.azure.com or services.ai.azure.com)",
           "api_key": "API Key",
           "chat_model": "Chat Model (optional)",
-          "image_model": "Image Model (optional)"
+          "image_model": "Image Model (optional)",
+          "chat_reasoning_model": "Chat model is a reasoning model",
+          "image_reasoning_model": "Image model is a reasoning model"
+        },
+        "data_description": {
+          "chat_reasoning_model": "Enable for reasoning models such as GPT-5 or the o-series. They use max_completion_tokens and ignore a custom temperature. Leave off for models like GPT-4o.",
+          "image_reasoning_model": "Same as above, for the image model when it is used for vision requests with attachments."
         }
       },
       "reconfigure": {
@@ -20,7 +26,13 @@
           "endpoint": "Azure AI Endpoint URL (openai.azure.com or services.ai.azure.com)",
           "api_key": "API Key",
           "chat_model": "Chat Model (optional)",
-          "image_model": "Image Model (optional)"
+          "image_model": "Image Model (optional)",
+          "chat_reasoning_model": "Chat model is a reasoning model",
+          "image_reasoning_model": "Image model is a reasoning model"
+        },
+        "data_description": {
+          "chat_reasoning_model": "Enable for reasoning models such as GPT-5 or the o-series. They use max_completion_tokens and ignore a custom temperature. Leave off for models like GPT-4o.",
+          "image_reasoning_model": "Same as above, for the image model when it is used for vision requests with attachments."
         }
       }
     },
@@ -41,7 +53,13 @@
         "description": "Configure your preferred models. At least one model must be configured.",
         "data": {
           "chat_model": "Chat Model (optional)",
-          "image_model": "Image Model (optional)"
+          "image_model": "Image Model (optional)",
+          "chat_reasoning_model": "Chat model is a reasoning model",
+          "image_reasoning_model": "Image model is a reasoning model"
+        },
+        "data_description": {
+          "chat_reasoning_model": "Enable for reasoning models such as GPT-5 or the o-series. They use max_completion_tokens and ignore a custom temperature. Leave off for models like GPT-4o.",
+          "image_reasoning_model": "Same as above, for the image model when it is used for vision requests with attachments."
         }
       }
     },

@@ -22,6 +22,21 @@ CONF_ENDPOINT = "endpoint"
 CONF_API_KEY = "api_key"
 CONF_CHAT_MODEL = "chat_model"
 CONF_IMAGE_MODEL = "image_model"
+# Whether each model is a reasoning model (GPT-5, o-series). Reasoning models
+# need max_completion_tokens and reject a custom temperature; other models use
+# max_tokens and temperature.
+CONF_CHAT_REASONING = "chat_reasoning_model"
+CONF_IMAGE_REASONING = "image_reasoning_model"
+
+
+def legacy_reasoning_default(model: str) -> bool:
+    """Default for entries saved before the reasoning option existed.
+
+    Those entries relied on automatic detection of GPT-5 by name, so keep that
+    result until the user picks a value, instead of breaking working setups.
+    """
+    return (model or "").strip().lower().startswith(("gpt-5", "gpt-6"))
+
 
 # Azure exposes two OpenAI-compatible surfaces and this integration supports
 # both, picked automatically from the endpoint the user configured:

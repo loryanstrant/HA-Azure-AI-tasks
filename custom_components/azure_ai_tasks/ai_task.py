@@ -28,9 +28,12 @@ from .const import (
     CONF_ENDPOINT,
     CONF_CHAT_MODEL,
     CONF_IMAGE_MODEL,
+    CONF_CHAT_REASONING,
+    CONF_IMAGE_REASONING,
     DOMAIN,
     V1_HOST_MARKER,
     V1_PATH_MARKER,
+    legacy_reasoning_default,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -51,9 +54,10 @@ DEFAULT_IMAGE_SIZE = "1024x1024"
 DEFAULT_WIDTH = 1024
 DEFAULT_HEIGHT = 1024
 DEFAULT_MIME_TYPE = "image/png"
+# Reasoning models (GPT-5, o-series) spend part of the completion budget on
+# hidden reasoning tokens, so a small limit can yield empty output. Give them
+# headroom.
 MAX_TOKENS = 1000
-# Reasoning models (GPT-5) spend part of the completion budget on hidden
-# reasoning tokens, so a small limit can yield empty output. Give them headroom.
 MAX_COMPLETION_TOKENS = 4000
 DEFAULT_TEMPERATURE = 0.7
 
@@ -95,19 +99,6 @@ def _endpoint_root(endpoint: str) -> str:
     if parts.netloc:
         return urlunsplit((parts.scheme, parts.netloc, "", "", ""))
     return (endpoint or "").rstrip("/")
-
-
-def _uses_max_completion_tokens(model: str) -> bool:
-    """Check if the model uses max_completion_tokens parameter instead of max_tokens.
-    
-    GPT-5 models (including gpt-5-mini) and newer models require max_completion_tokens.
-    Older models like GPT-4, GPT-3.5 use max_tokens.
-    """
-    if not model:
-        return False
-    model_lower = model.lower()
-    # GPT-5 models use max_completion_tokens
-    return model_lower.startswith("gpt-5")
 
 
 async def async_setup_entry(
@@ -224,6 +215,24 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
     def _is_vision_model(self, model: str | None) -> bool:
         """Check if a model supports vision/attachments."""
         return bool(model and model.lower() in VISION_MODELS)
+
+    def _is_reasoning(self, conf_key: str, model: str | None) -> bool:
+        """Whether the user marked this model as a reasoning model.
+
+        Options take precedence over data. Entries saved before the setting
+        existed fall back to the previous automatic behaviour.
+        """
+        for store in (self._config_entry.options, self._config_entry.data):
+            if conf_key in store:
+                return bool(store[conf_key])
+        return legacy_reasoning_default(model or "")
+
+    @staticmethod
+    def _completion_params(is_reasoning: bool) -> dict[str, Any]:
+        """Token limit and sampling parameters for a chat completion."""
+        if is_reasoning:
+            return {"max_completion_tokens": MAX_COMPLETION_TOKENS}
+        return {"max_tokens": MAX_TOKENS, "temperature": DEFAULT_TEMPERATURE}
 
     @property
     def supported_features(self) -> int:
@@ -555,14 +564,11 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
         model: str
     ) -> dict[str, Any]:
         """Build chat completion payload with or without attachments."""
-        # GPT-5 / reasoning models use max_completion_tokens (with headroom for
-        # hidden reasoning tokens) and must NOT be sent a custom temperature -
-        # they only accept the default value of 1.
-        is_reasoning = _uses_max_completion_tokens(model)
-        token_param = "max_completion_tokens" if is_reasoning else "max_tokens"
-        token_value = MAX_COMPLETION_TOKENS if is_reasoning else MAX_TOKENS
-        extra_params: dict[str, Any] = {} if is_reasoning else {"temperature": DEFAULT_TEMPERATURE}
-
+        # Reasoning models take max_completion_tokens and no custom temperature;
+        # the user chooses per model in the integration's settings.
+        completion_params = self._completion_params(
+            self._is_reasoning(CONF_CHAT_REASONING, model)
+        )
         if attachments:
             message_content: list[dict[str, Any]] = [{"type": "text", "text": user_message}]
             for attachment in attachments:
@@ -580,14 +586,12 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
             
             return {
                 "messages": [{"role": "user", "content": message_content}],
-                token_param: token_value,
-                **extra_params,
+                **completion_params,
             }
         else:
             return {
                 "messages": [{"role": "user", "content": user_message}],
-                token_param: token_value,
-                **extra_params,
+                **completion_params,
             }
 
     async def _handle_flux_image_edit(
@@ -755,17 +759,13 @@ class AzureAITaskEntity(ai_task.AITaskEntity):
             except Exception as err:
                 _LOGGER.warning("Failed to process attachment: %s", err)
         
-        # GPT-5 / reasoning models: max_completion_tokens (with headroom) and no
-        # custom temperature.
-        is_reasoning = _uses_max_completion_tokens(image_model)
-        token_param = "max_completion_tokens" if is_reasoning else "max_tokens"
         payload = {
             "messages": [{"role": "user", "content": message_content}],
-            token_param: MAX_COMPLETION_TOKENS if is_reasoning else MAX_TOKENS,
+            **self._completion_params(
+                self._is_reasoning(CONF_IMAGE_REASONING, image_model)
+            ),
             "model": image_model
         }
-        if not is_reasoning:
-            payload["temperature"] = DEFAULT_TEMPERATURE
         url, params, payload = self._build_request(
             image_model, "chat/completions", API_VERSION_IMAGE_LATEST, payload
         )
