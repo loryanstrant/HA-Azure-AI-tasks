@@ -170,7 +170,7 @@ data:
 
 **Chat Models**: You can enter any chat model name that your Azure AI deployment supports:
 - gpt-35-turbo, gpt-4, gpt-4o, gpt-4-turbo, gpt-5, gpt-5-mini, etc.
-- **Note**: GPT-5 models (including gpt-5-mini) are fully supported and use the max_completion_tokens parameter automatically
+- **Note**: For reasoning models (GPT-5, GPT-6) enable **Chat model is a reasoning model** (and **Image model is a reasoning model** for the image model) in the integration's settings. Reasoning models are sent `max_completion_tokens` and no custom temperature; other models are sent `max_tokens` and a temperature. Existing entries using a `gpt-5*` or `gpt-6*` model keep working without changes.
 
 **Image Models**: Supported image generation models:
 - **dall-e-2**: Classic DALL-E model with multiple size options

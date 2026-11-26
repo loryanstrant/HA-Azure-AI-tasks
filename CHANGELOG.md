@@ -3,6 +3,21 @@
 All notable changes to Azure AI Tasks are recorded here. Versions follow
 [semantic versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- **You now choose whether each model is a reasoning model.** The chat model and
+  the image model each have a "reasoning model" checkbox when you set up,
+  reconfigure, or change options. Reasoning models (GPT-5, o-series) are sent
+  `max_completion_tokens` and no custom temperature; other models are sent
+  `max_tokens` and a temperature. This replaces guessing from the model name, so
+  it works with any deployment name.
+
+Existing setups are unaffected: an entry saved before this option existed and
+using a `gpt-5*` or `gpt-6*` model keeps behaving as a reasoning model until you change the
+setting.
+
 ## 2.4.0
 
 ### Changed
